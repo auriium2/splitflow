@@ -20,7 +20,7 @@ use tokio::time::sleep;
 use rand::random;
 
 use crate::billboard::{console, NEUTRAL_CONSOLE_BB, deploy, perfmon, RSS_CONSOLE_BB};
-use crate::billboard::console::{ConsoleCommand, ConsoleMessage, task_console};
+use crate::billboard::console::{ConsoleCommand, ConsoleMessage, OrderedConsoleCommand, task_console, task_ordered_console};
 use crate::billboard::perfmon::*;
 use crate::scrape::feed::RSSCommand;
 
@@ -38,11 +38,6 @@ extern crate log;
 async fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
     
-    tokio::spawn(async {
-        tokio::signal::ctrl_c().await.expect("TODO: panic message");
-        
-        info!("SHUTDOWN");
-    });
     
     let core = Arc::new(bootstrap::load_data()?);
     
@@ -52,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     let (perfmon_tx,perfmon_rx): (Sender<PerfmonCommand>, Receiver<PerfmonCommand>) = mpsc::channel(10);
     let (rss_tx,rss_rx): (Sender<RSSCommand>, Receiver<RSSCommand>) = mpsc::channel(1);
     let (neutral_con_tx, neutral_con_rx): (Sender<ConsoleCommand>, Receiver<ConsoleCommand>) = mpsc::channel(10);
-    let (rss_con_tx,rss_con_rx): (Sender<ConsoleCommand>, Receiver<ConsoleCommand>) = mpsc::channel(20);
+    let (rss_con_tx,rss_con_rx): (Sender<OrderedConsoleCommand>, Receiver<OrderedConsoleCommand>) = mpsc::channel(20);
     
     let main_neutral_con_tx_copy = neutral_con_tx.clone();
     
@@ -68,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         if let Err(why2) = v.1 {
-            log::error!("Error ticking console: {why2:?}")
+            log::error!("Error ticking console: {}", why2.to_string())
         }
 
     }
@@ -148,23 +143,27 @@ async fn main() -> anyhow::Result<()> {
 
     //discord processors
     tokio::spawn(async {
-        task_console(console_core, console_client, NEUTRAL_CONSOLE_BB, "DEBUG", neutral_con_rx).await;
+        task_console(console_core, console_client, NEUTRAL_CONSOLE_BB, "DEBUG", neutral_con_rx).await.expect("TODO: panic message");
     });
     tokio::spawn(async {
-        task_console(rss_console_core, rss_console_client, RSS_CONSOLE_BB, "RSS", rss_con_rx).await;
+        task_ordered_console(rss_console_core, rss_console_client, RSS_CONSOLE_BB, "RSS", rss_con_rx).await.expect("TODO: panic message");
     });
     tokio::spawn(async {
         task_perfmon(perfmon_core, perfmon_client, perfmon_rx).await;
     });
+
+  
     tokio::spawn(async {
         let e = scrape::feed::task_update_rss(rss_core, rss_rx, rss_con_tx).await;
         
         if e.is_err() {
             log::error!("Error processing rss: {}", e.err().unwrap().to_string())
         }
+        
+        return
     });
 
-    main_neutral_con_tx_copy.send(ConsoleCommand::Print(ConsoleMessage::new_str("[INFO] Systems ok!"))).await?;
+    main_neutral_con_tx_copy.send(ConsoleCommand::Print(ConsoleMessage::new_str("[INFO] Systems ok!"), false)).await?;
     log::info!("Systems ok!");
     
     client.start().await.unwrap();

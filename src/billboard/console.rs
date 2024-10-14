@@ -38,10 +38,13 @@ pub async fn task_console<const N: usize>(core: Arc<Core>, ctx: Arc<Http>, id: &
         match cmd {
             ConsoleCommand::Print(message, notify) => {
                 const ROLE_KEY: &[u8; 8] = b"role_key";
-                let role_u64: u64 = bincode::deserialize::<u64>(core.discord_db.get(ROLE_KEY)?.ok_or(anyhow!("erm"))?.as_ref())?;
+                let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
+                    return bincode::deserialize::<u64>(v.as_ref())
+                }).unwrap_or(Ok(1))?;
+
                 let mention_role: RoleId = RoleId::new(role_u64);
-              
-                
+
+
                 buf.push_back(message);
                 let opt = core.discord_db.get(id).unwrap();
                 if opt.is_some() {
@@ -71,7 +74,10 @@ pub async fn task_ordered_console<const N: usize>(core: Arc<Core>, ctx: Arc<Http
         match cmd {
             OrderedConsoleCommand::Printall(message, notify) => {
                 const ROLE_KEY: &[u8; 8] = b"role_key";
-                let role_u64: u64 = bincode::deserialize::<u64>(core.discord_db.get(ROLE_KEY)?.ok_or(anyhow!("erm"))?.as_ref())?;
+                let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
+                    return bincode::deserialize::<u64>(v.as_ref())
+                }).unwrap_or(Ok(1))?;
+                
                 let mention_role: RoleId = RoleId::new(role_u64);
 
                 let opt = core.discord_db.get(id).unwrap();
@@ -200,6 +206,23 @@ impl<T: Ord + Copy + Default> ConsoleMessage<T> {
             message: s,
             children: cd,
             order: T::default()
+        }
+    }
+
+    pub(crate) fn new_children_ord(s: String, children: Vec<String>, ord: T) -> Self {
+
+        let cd: Vec<ConsoleMessage<T>> = children.iter().map(|f| {
+            return ConsoleMessage {
+                message: f.to_string(),
+                children: vec![],
+                order: T::default(),
+            }
+        }).collect();
+
+        return ConsoleMessage {
+            message: s,
+            children: cd,
+            order: ord
         }
     }
 }
