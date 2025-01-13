@@ -12,98 +12,135 @@ use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
 use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http, RoleId, Timestamp};
 use serenity::builder::CreateMessage;
 use tokio::sync::mpsc::Receiver;
+use tokio::time::Instant;
 
 use crate::billboard::{BillboardLocation};
 use crate::bootstrap::Core;
 
 pub const IMAGE_NAME: &str = "console.png";
 
-pub enum ConsoleCommand {
-    Print(DateMessage, bool),
+#[derive(Clone, Default)]
+pub struct ConsoleMessage<K: Ord + Copy> {
+    message: String,
+    children: Vec<ConsoleMessage<K>>,
+    order: K,
+}
+
+pub type DateCommand = ConsoleCommand<DateTime<Utc>>;
+pub type OrderCommand = ConsoleCommand<u8>;
+
+pub enum ConsoleCommand<K: Ord + Copy> {
+    Tick,
+    Print(ConsoleMessage<K>, bool),
+    PrintAll(Vec<ConsoleMessage<K>>, bool),
     Die
 }
 
-pub enum OrderedConsoleCommand {
-    Printall(Vec<OrderMessage>, bool), //Display this entire message
-    Die
-}
 
 /*async fn handle_print(buf: &mut CircularBuffer<10, DateMessage>) -> anyhow::Result<()> {
-    
+
 }*/
 
-pub async fn task_console<const N: usize>(core: Arc<Core>, ctx: Arc<Http>, id: &[u8; N], name: &str, mut rx: Receiver<ConsoleCommand>) -> anyhow::Result<()> {
-    let mut buf = CircularBuffer::<10, DateMessage>::new();
-    while let Some(cmd) = rx.recv().await {
-        match cmd {
-            ConsoleCommand::Print(message, notify) => {
-                const ROLE_KEY: &[u8; 8] = b"role_key";
-                let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
-                    return bincode::deserialize::<u64>(v.as_ref())
-                }).unwrap_or(Ok(1))?;
+pub struct Console {
+    id: &'static [u8],
+    name: &'static str
+}
 
-                let mention_role: RoleId = RoleId::new(role_u64);
-
-
-                buf.push_back(message);
-                let opt = core.discord_db.get(id).unwrap();
-                if opt.is_some() {
-                    let frend = generate_console_output(buf.to_vec());
-                    let contents = opt.unwrap();
-
-                    let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
-                    let old_channel = ChannelId::new(old.channel_id);
-                    let edit = generate_edit(&ctx, name, notify, mention_role, frend, old, old_channel).await;
-
-                    if let Err(why) = edit {
-                        eprintln!("Error sending message: {why:?}");
-                    };
-                }
-            }
-            ConsoleCommand::Die => {
-                break;
-            }
+impl Console {
+    pub fn new(id: &'static [u8], name: &'static str) -> Console {
+        Console {
+            id,
+            name
         }
     }
     
-    Ok(())
-}
+    pub async fn task<T: Ord + Copy>(self, core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<ConsoleCommand<T>>) -> anyhow::Result<()> {
+        let mut buf = CircularBuffer::<17, ConsoleMessage<T>>::new();
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                ConsoleCommand::Tick => {
+                    let opt = core.discord_db.get(self.id).unwrap();
 
-pub async fn task_ordered_console<const N: usize>(core: Arc<Core>, ctx: Arc<Http>, id: &[u8; N], name: &str, mut rx: Receiver<OrderedConsoleCommand>) -> anyhow::Result<()> {
-    while let Some(cmd) = rx.recv().await {
-        match cmd {
-            OrderedConsoleCommand::Printall(message, notify) => {
-                const ROLE_KEY: &[u8; 8] = b"role_key";
-                let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
-                    return bincode::deserialize::<u64>(v.as_ref())
-                }).unwrap_or(Ok(1))?;
-                
-                let mention_role: RoleId = RoleId::new(role_u64);
+                    if opt.is_some() {
+                        let frend = generate_console_output(buf.to_vec());
+                        let contents = opt.unwrap();
 
-                let opt = core.discord_db.get(id).unwrap();
-                if opt.is_some() {
-                    let frend = generate_console_output(message);
-                    let contents = opt.unwrap();
+                        let now = Instant::now();
 
-                    let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
-                    let old_channel = ChannelId::new(old.channel_id);
-                    let edit = generate_edit(&ctx, name, notify, mention_role, frend, old, old_channel).await;
 
-                    if let Err(why) = edit {
-                        eprintln!("Error sending message: {why:?}");
-                    };
+                        let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
+                        let old_channel = ChannelId::new(old.channel_id);
+
+                        let later_dur = Instant::now().checked_duration_since(now).expect("").as_millis();
+                        info!("task_console took {}", later_dur);
+
+
+                        let edit = generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
+
+                        if let Err(why) = edit {
+                            eprintln!("Error sending message: {why:?}");
+                        };
+                    }
                 }
-            }
-            OrderedConsoleCommand::Die => {
-                break;
+                ConsoleCommand::Print(message, notify) => {
+                    /* const ROLE_KEY: &[u8; 8] = b"role_key";
+                     let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
+                         return bincode::deserialize::<u64>(v.as_ref())
+                     }).unwrap_or(Ok(1))?;
+     
+                     let mention_role: RoleId = RoleId::new(role_u64);*/
+                    buf.push_back(message);
+                }
+                ConsoleCommand::Die => {
+                    break;
+                }
+                _ => {}
             }
         }
+
+        Ok(())
     }
 
-    Ok(())
+    pub async fn task_ordered_console<const N: usize>(self, core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<OrderCommand>) -> anyhow::Result<()> {
+        let mut storage: Vec<ConsoleMessage<u8>> = vec![];
+        
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                OrderCommand::Tick => {
+                    let opt = core.discord_db.get(self.id).unwrap();
+                    if opt.is_some() {
+                        let frend = generate_console_output(storage.clone());
+                        let contents = opt.unwrap();
+
+                        let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
+                        let old_channel = ChannelId::new(old.channel_id);
+                        let edit = generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
+
+                        if let Err(why) = edit {
+                            eprintln!("Error sending message: {why:?}");
+                        };
+                    }
+                },
+                OrderCommand::Print(a, ..) => {
+                    
+                },
+                OrderCommand::PrintAll(message, notify) => {
+                    storage = message;
+                }
+                OrderCommand::Die => {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
-async fn generate_edit<'a>(ctx: &Arc<Http>, name: &str, notify: bool, mention_role: RoleId, frend: Cow<'a,[u8]>, old: BillboardLocation, old_channel: ChannelId) -> anyhow::Result<()> {
+
+
+
+async fn generate_edit<'a>(ctx: &Arc<Http>, name: &str, notify: bool, frend: Cow<'a,[u8]>, old: BillboardLocation, old_channel: ChannelId) -> anyhow::Result<()> {
     let edit = old_channel.edit_message(
         &ctx,
         u64::from(old.message_id),
@@ -113,9 +150,9 @@ async fn generate_edit<'a>(ctx: &Arc<Http>, name: &str, notify: bool, mention_ro
                 .new_attachment(CreateAttachment::bytes(frend, IMAGE_NAME))
                 .embed(generate_console_embed(true, name));
 
-            if notify {
+            /*if notify {
                 msg = msg.content(format!("ALERT: <@{}>", mention_role));
-            }
+            }*/
 
             msg
         }
@@ -144,16 +181,6 @@ fn generate_console_embed(online: bool, name: &str) -> CreateEmbed {
 
 
 
-// Define the ConsoleMessage struct
-#[derive(Clone, Default)]
-pub struct ConsoleMessage<K: Ord + Copy> {
-    message: String,
-    children: Vec<ConsoleMessage<K>>,
-    order: K,
-}
-
-pub type DateMessage = ConsoleMessage<DateTime<Utc>>;
-pub type OrderMessage = ConsoleMessage<u8>;
 
 impl<T: Ord + Copy> ConsoleMessage<T> {
     pub(crate) fn new_full(message: &str, children: Vec<ConsoleMessage<T>>, order: T) -> ConsoleMessage<T> {
@@ -167,7 +194,7 @@ impl<T: Ord + Copy> ConsoleMessage<T> {
 }
 
 impl<T: Ord + Copy + Default> ConsoleMessage<T> {
-    
+
     pub(crate) fn new(s: String) -> Self {
         return ConsoleMessage {
             message: s,
@@ -229,17 +256,18 @@ impl<T: Ord + Copy + Default> ConsoleMessage<T> {
 
 const GREEN: Rgba<u8> = Rgba([120u8, 255u8, 120u8, 255u8]);
 const BLACK: Rgba<u8> = Rgba([0u8, 0u8, 0u8, 255u8]);
-const FONT_SIZE: f32 = 18.0;
+const FONT_SIZE: f32 = 15.0;
 const LINE_HEIGHT: u32 = 20;
 const BASEDNESS: u32 = 10;
 const INDENT_WIDTH: u32 = 14;
 const MARGIN_LEFT: u32 = 20;
 const MARGIN_TOP: u32 = 20;
-const IMAGE_SIZE: u32 = 400;
+const IMAGE_SIZE: u32 = 600;
 const FONT_DATA: &[u8] = include_bytes!("../../assets/VGA.ttf");
 
 
 fn generate_console_output<T: Ord + Copy>(messages: Vec<ConsoleMessage<T>>) -> Cow<'static, [u8]> {
+    
     let f1 = FontArc::try_from_slice(FONT_DATA).unwrap();
     let font = f1.as_scaled(PxScale::from(FONT_SIZE));
 
@@ -282,6 +310,8 @@ fn generate_console_output<T: Ord + Copy>(messages: Vec<ConsoleMessage<T>>) -> C
     let mut buffer = Cursor::new(Vec::new());
     img.write_to(&mut buffer, image::ImageFormat::Png)
         .unwrap();
+    
+    
 
     // Return the image bytes
     Cow::Owned(buffer.into_inner())

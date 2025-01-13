@@ -7,12 +7,13 @@ edition = "2021"
 confy = "0.6.1"
 poise = { version = "0.6.1", features = ["default"] }
 serenity = { version = "0.12.2", features = ["default"] }
-tokio = { version = "1.40.0", features = ["default", "rt-multi-thread", "signal"] }
+tokio = { version = "1.40.0", features = ["full", "tracing"] }
+tokio-socks = "0.5.2"
 tokio-tungstenite = { version = "0.24.0", features = ["default"] }
 env_logger = { version = "0.11.5", features = ["default"] }
 chrono = { version = "0.4.38", features = [ "serde"]}
 chrono-tz = "0.10.0"
-reqwest = { version = "0.12.8", features = ["default", "json"] }
+reqwest = { version = "0.12.8", features = ["default", "json", "socks"] }
 sys-info = "0.9.1"
 sled = "0.34.7"
 image = "0.25.2"
@@ -34,3 +35,18 @@ feed-rs = "2.1.1"
 serde_json = "1.0.128"
 rayon = "1.10.0"
 futures = { version = "0.3.31", features = ["default"] }
+console-subscriber = "0.4.0"
+scraper = "0.20.0"
+aho-corasick = "1.1.3"
+kanal = "0.1.0-pre8"
+
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
+
+[profile.release]
+opt-level = "z"        # Best for runtime performance with less emphasis on compile time
+lto = "fat"            # Enables Link Time Optimization for better performance
+codegen-units = 1      # Forces a single codegen unit to improve optimization (at the cost of slower compilation)
+debug = false          # Disable debug information for better performance
+panic = "abort"        # Use `abort` to avoid stack unwinding, reducing binary overhead
+#incremental = false    # Disable incremental compilation for consistent, fully optimized builds
