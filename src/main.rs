@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use clokwerk::{AsyncScheduler, Job, Scheduler, TimeUnits};
 use clokwerk::Interval::Wednesday;
 use clokwerk::timeprovider::ChronoTimeProvider;
-use poise::{Framework, serenity_prelude as serenity};
+use poise::{serenity_prelude as serenity, Framework};
 use serenity::all::{EventHandler, GuildId, RatelimitInfo};
 use serenity::async_trait;
 use tokio::join;
@@ -19,16 +19,18 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use rand::random;
 
-use crate::billboard::{console, NEUTRAL_CONSOLE_BB, deploy, perfmon, RSS_CONSOLE_BB};
+use crate::billboard::{console, deploy, perfmon, NEUTRAL_CONSOLE_BB, RSS_CONSOLE_BB};
 use crate::billboard::console::{Console, ConsoleCommand, ConsoleMessage, DateCommand};
 use crate::billboard::perfmon::*;
-use crate::scrape::feed::RSSCommand;
+use core::Core;
+use crate::logging::ConsoleLogger;
+use crate::scrape::RSSCommand;
 
-mod bootstrap;
-mod common;
 mod billboard;
 mod scrape;
 mod buysell;
+mod logging;
+mod core;
 
 extern crate pretty_env_logger;
 #[macro_use] 
@@ -36,10 +38,23 @@ extern crate log;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    pretty_env_logger::init();
     console_subscriber::init();
     
-    let core = Arc::new(bootstrap::load_data()?);
+    //setup log forwarding
+    /*let console_rx = {
+        let (tx,rx): (Sender<ConsoleCommand<u8>>, Receiver<ConsoleCommand<u8>>) = mpsc::channel(10);
+        let logger = ConsoleLogger::new(tx);
+        log::set_boxed_logger(Box::new(logger))?;
+        
+        rx
+    };*/
+    
+   pretty_env_logger::init();
+
+    
+
+
+    let core = Arc::new(core::load_data()?);
     let (start_tx, mut start_rx) = mpsc::channel(1);
 
     //MESSAGES AND SCHEDULING
@@ -105,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
     let framework_core = core.clone();
     let framework = Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![deploy(), console(), perfmon()],
+            commands: vec![deploy()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -122,32 +137,35 @@ async fn main() -> anyhow::Result<()> {
         .framework(framework)
         .event_handler(Handler{ is_loop_running: Default::default(), sender: start_tx })
         .await?;
-
-    let console_core = core.clone();
-    let console_client = client.http.clone();
-    let rss_console_core = core.clone();
-    let rss_console_client = client.http.clone();
+    
     let rss_core = core.clone();
     let perfmon_core = core.clone();
     let perfmon_client = client.http.clone();
 
 
     //discord processors
-    let pa = tokio::spawn(async {
-        Console::new(NEUTRAL_CONSOLE_BB, "DEBUG").task(console_core, console_client, neutral_con_rx).await
-    });
-
-    tokio::spawn(async {
-        Console::new(RSS_CONSOLE_BB, "RSS")
-            .task(rss_console_core, rss_console_client, rss_con_rx).await.expect("TODO: panic message");
-    });
+    {
+        let core = core.clone();
+        let client = client.http.clone();
+        tokio::spawn(async {
+            Console::new(NEUTRAL_CONSOLE_BB, "DEBUG", core, client, neutral_con_rx).task().await
+        });
+    }
+    {   
+        let core = core.clone();
+        let client = client.http.clone();
+        tokio::spawn(async {
+            Console::new(RSS_CONSOLE_BB, "RSS", core, client, rss_con_rx).task().await
+        });
+    }
+    
     tokio::spawn(async {
         task_perfmon(perfmon_core, perfmon_client, perfmon_rx).await;
     });
-
   
     tokio::spawn(async {
-        let e = scrape::feed::task_update_rss(rss_core, rss_rx, rss_con_tx).await;
+        scrape::RSSTask::new(rss_core, rss_rx, rss_con_tx, )?.run().await;
+        let e = scrape::task_update_rss(rss_core, rss_rx, rss_con_tx).await;
         
         if e.is_err() {
             log::error!("Error processing rss: {:?}", e.err().unwrap())
@@ -186,3 +204,9 @@ impl EventHandler for Handler {
     }
 }
 
+pub type DynError = Box<dyn std::error::Error + Send + Sync>;
+pub type DynResult<T> = Result<T, DynError>;
+pub type DynNothing = DynResult<()>;
+pub type PoiseContext<'a> = poise::Context<'a, Arc<Core>, DynError>;
+
+const AURIIUM_NAME: &str = "auriium's software";

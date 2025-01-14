@@ -8,8 +8,6 @@ confy = "0.6.1"
 poise = { version = "0.6.1", features = ["default"] }
 serenity = { version = "0.12.2", features = ["default"] }
 tokio = { version = "1.40.0", features = ["full", "tracing"] }
-tokio-socks = "0.5.2"
-tokio-tungstenite = { version = "0.24.0", features = ["default"] }
 env_logger = { version = "0.11.5", features = ["default"] }
 chrono = { version = "0.4.38", features = [ "serde"]}
 chrono-tz = "0.10.0"
@@ -39,6 +37,11 @@ console-subscriber = "0.4.0"
 scraper = "0.20.0"
 aho-corasick = "1.1.3"
 kanal = "0.1.0-pre8"
+lazy_static = "1.5.0"
+regex = "1.11.0"
+mongodb = "3.1.1"
+bson = "2.13.0"
+quick_cache = "0.6.9"
 
 [build]
 rustflags = ["--cfg", "tokio_unstable"]

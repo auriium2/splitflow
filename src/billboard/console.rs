@@ -1,22 +1,22 @@
 use std::borrow::Cow;
-use std::error::Error;
 use std::io::Cursor;
 use std::sync::Arc;
 
 use ab_glyph::{Font, FontArc, Glyph, PxScale, PxScaleFont, ScaleFont};
-use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use circular_buffer::CircularBuffer;
 use image::{ImageBuffer, Rgba};
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
-use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http, RoleId, Timestamp};
-use serenity::builder::CreateMessage;
+use serenity::all::{
+    ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http,
+    Timestamp,
+};
 use tokio::sync::mpsc::Receiver;
-use tokio::time::Instant;
 
-use crate::billboard::{BillboardLocation};
-use crate::bootstrap::Core;
+use crate::billboard::BillboardLocation;
+use crate::core::Core;
 
+// code
 pub const IMAGE_NAME: &str = "console.png";
 
 #[derive(Clone, Default)]
@@ -25,57 +25,44 @@ pub struct ConsoleMessage<K: Ord + Copy> {
     children: Vec<ConsoleMessage<K>>,
     order: K,
 }
-
 pub type DateCommand = ConsoleCommand<DateTime<Utc>>;
 pub type OrderCommand = ConsoleCommand<u8>;
-
 pub enum ConsoleCommand<K: Ord + Copy> {
     Tick,
     Print(ConsoleMessage<K>, bool),
     PrintAll(Vec<ConsoleMessage<K>>, bool),
-    Die
+    Die,
+}
+pub struct Console<U: Ord + Copy> {
+    id: &'static str,
+    name: &'static str,
+    core: Arc<Core>,
+    ctx: Arc<Http>,
+    rx: Receiver<ConsoleCommand<U>>,
 }
 
-
-/*async fn handle_print(buf: &mut CircularBuffer<10, DateMessage>) -> anyhow::Result<()> {
-
-}*/
-
-pub struct Console {
-    id: &'static [u8],
-    name: &'static str
-}
-
-impl Console {
-    pub fn new(id: &'static [u8], name: &'static str) -> Console {
-        Console {
-            id,
-            name
-        }
+impl<K: Ord + Copy> Console<K> {
+    pub fn new(id: &'static str, name: &'static str, core: Arc<Core>, ctx: Arc<Http>, rx: Receiver<ConsoleCommand<K>>) -> Self {
+        Self { id, name, core, ctx, rx }
     }
-    
-    pub async fn task<T: Ord + Copy>(self, core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<ConsoleCommand<T>>) -> anyhow::Result<()> {
-        let mut buf = CircularBuffer::<17, ConsoleMessage<T>>::new();
-        while let Some(cmd) = rx.recv().await {
+}
+
+impl Console<DateTime<Utc>> {
+    pub async fn task(mut self) -> anyhow::Result<()> {
+        let mut buf = CircularBuffer::<17, ConsoleMessage<DateTime<Utc>>>::new();
+        while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 ConsoleCommand::Tick => {
-                    let opt = core.discord_db.get(self.id).unwrap();
-
+                    let opt = self.core.discord_db.get(self.id)?;
                     if opt.is_some() {
                         let frend = generate_console_output(buf.to_vec());
                         let contents = opt.unwrap();
-
-                        let now = Instant::now();
-
-
-                        let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
+                        let old =
+                            bincode::deserialize::<BillboardLocation>(contents.as_ref())?;
                         let old_channel = ChannelId::new(old.channel_id);
 
-                        let later_dur = Instant::now().checked_duration_since(now).expect("").as_millis();
-                        info!("task_console took {}", later_dur);
-
-
-                        let edit = generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
+                        let edit =
+                            generate_edit(&self.ctx, self.name, false, frend, old, old_channel).await;
 
                         if let Err(why) = edit {
                             eprintln!("Error sending message: {why:?}");
@@ -84,11 +71,11 @@ impl Console {
                 }
                 ConsoleCommand::Print(message, notify) => {
                     /* const ROLE_KEY: &[u8; 8] = b"role_key";
-                     let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
-                         return bincode::deserialize::<u64>(v.as_ref())
-                     }).unwrap_or(Ok(1))?;
-     
-                     let mention_role: RoleId = RoleId::new(role_u64);*/
+                    let role_u64: u64 = core.discord_db.get(ROLE_KEY)?.map(|v| {
+                        return bincode::deserialize::<u64>(v.as_ref())
+                    }).unwrap_or(Ok(1))?;
+
+                    let mention_role: RoleId = RoleId::new(role_u64);*/
                     buf.push_back(message);
                 }
                 ConsoleCommand::Die => {
@@ -100,10 +87,23 @@ impl Console {
 
         Ok(())
     }
+}
 
-    pub async fn task_ordered_console<const N: usize>(self, core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<OrderCommand>) -> anyhow::Result<()> {
+impl Console<u8> {
+
+    pub async fn task_ord<const N: usize>() -> anyhow::Result<()> {
+        Ok(())
+    }
+    
+    
+    pub async fn task_ordered_console<const N: usize>(
+        self,
+        core: Arc<Core>,
+        ctx: Arc<Http>,
+        mut rx: Receiver<OrderCommand>,
+    ) -> anyhow::Result<()> {
         let mut storage: Vec<ConsoleMessage<u8>> = vec![];
-        
+
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 OrderCommand::Tick => {
@@ -112,18 +112,18 @@ impl Console {
                         let frend = generate_console_output(storage.clone());
                         let contents = opt.unwrap();
 
-                        let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
+                        let old =
+                            bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
                         let old_channel = ChannelId::new(old.channel_id);
-                        let edit = generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
+                        let edit =
+                            generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
 
                         if let Err(why) = edit {
                             eprintln!("Error sending message: {why:?}");
                         };
                     }
-                },
-                OrderCommand::Print(a, ..) => {
-                    
-                },
+                }
+                OrderCommand::Print(a, ..) => {}
                 OrderCommand::PrintAll(message, notify) => {
                     storage = message;
                 }
@@ -137,14 +137,16 @@ impl Console {
     }
 }
 
-
-
-
-async fn generate_edit<'a>(ctx: &Arc<Http>, name: &str, notify: bool, frend: Cow<'a,[u8]>, old: BillboardLocation, old_channel: ChannelId) -> anyhow::Result<()> {
-    let edit = old_channel.edit_message(
-        &ctx,
-        u64::from(old.message_id),
-        {
+async fn generate_edit<'a>(
+    ctx: &Arc<Http>,
+    name: &str,
+    notify: bool,
+    frend: Cow<'a, [u8]>,
+    old: BillboardLocation,
+    old_channel: ChannelId,
+) -> anyhow::Result<()> {
+    let edit = old_channel
+        .edit_message(&ctx, u64::from(old.message_id), {
             let mut msg = EditMessage::new()
                 .remove_all_attachments()
                 .new_attachment(CreateAttachment::bytes(frend, IMAGE_NAME))
@@ -155,104 +157,112 @@ async fn generate_edit<'a>(ctx: &Arc<Http>, name: &str, notify: bool, frend: Cow
             }*/
 
             msg
-        }
-    ).await;
+        })
+        .await;
     Ok(())
 }
 
 
 fn generate_console_embed(online: bool, name: &str) -> CreateEmbed {
     let c = if online {
-        Colour::from_rgb(120,255,120)
+        Colour::from_rgb(120, 255, 120)
     } else {
-        Colour::from_rgb(255,120,120)
+        Colour::from_rgb(255, 120, 120)
     };
 
     let embed = CreateEmbed::new()
         .color(c)
         .attachment(IMAGE_NAME)
-        .title(if online {format!("STRIDER | {} CONSOLE [ ONLINE ]", name)} else {format!("STRIDER | {} CONSOLE [ OFFLINE ]", name)})
+        .title(if online {
+            format!("STRIDER | {} CONSOLE [ ONLINE ]", name)
+        } else {
+            format!("STRIDER | {} CONSOLE [ OFFLINE ]", name)
+        })
         .footer(CreateEmbedFooter::new("auriium software"))
         .timestamp(Timestamp::now());
 
     embed
 }
 
-
-
-
-
 impl<T: Ord + Copy> ConsoleMessage<T> {
-    pub(crate) fn new_full(message: &str, children: Vec<ConsoleMessage<T>>, order: T) -> ConsoleMessage<T> {
+    pub(crate) fn new_full(
+        message: &str,
+        children: Vec<ConsoleMessage<T>>,
+        order: T,
+    ) -> ConsoleMessage<T> {
         return ConsoleMessage {
             message: message.to_string(),
             children,
             order,
-        }
+        };
     }
-
 }
 
 impl<T: Ord + Copy + Default> ConsoleMessage<T> {
-
     pub(crate) fn new(s: String) -> Self {
         return ConsoleMessage {
             message: s,
             children: vec![],
-            order: T::default()
-        }
+            order: T::default(),
+        };
     }
 
     pub(crate) fn new_ord(s: String, ord: T) -> Self {
         return ConsoleMessage {
             message: s,
             children: vec![],
-            order: ord
-        }
+            order: ord,
+        };
     }
 
     pub(crate) fn new_str(s: &str) -> Self {
         return ConsoleMessage {
             message: s.to_string(),
             children: vec![],
-            order: T::default()
-        }
+            order: T::default(),
+        };
     }
 
     pub(crate) fn new_children(s: String, children: Vec<String>) -> Self {
-
-       let cd: Vec<ConsoleMessage<T>> = children.iter().map(|f| {
-           return ConsoleMessage {
-               message: f.to_string(),
-               children: vec![],
-               order: T::default(),
-           }
-        }).collect();
+        let cd: Vec<ConsoleMessage<T>> = children
+            .iter()
+            .map(|f| {
+                return ConsoleMessage {
+                    message: f.to_string(),
+                    children: vec![],
+                    order: T::default(),
+                };
+            })
+            .collect();
 
         return ConsoleMessage {
             message: s,
             children: cd,
-            order: T::default()
-        }
+            order: T::default(),
+        };
     }
 
     pub(crate) fn new_children_ord(s: String, children: Vec<String>, ord: T) -> Self {
-
-        let cd: Vec<ConsoleMessage<T>> = children.iter().map(|f| {
-            return ConsoleMessage {
-                message: f.to_string(),
-                children: vec![],
-                order: T::default(),
-            }
-        }).collect();
+        let cd: Vec<ConsoleMessage<T>> = children
+            .iter()
+            .map(|f| {
+                return ConsoleMessage {
+                    message: f.to_string(),
+                    children: vec![],
+                    order: T::default(),
+                };
+            })
+            .collect();
 
         return ConsoleMessage {
             message: s,
             children: cd,
-            order: ord
-        }
+            order: ord,
+        };
     }
 }
+
+//"pretty" console - please get rid of this
 
 const GREEN: Rgba<u8> = Rgba([120u8, 255u8, 120u8, 255u8]);
 const BLACK: Rgba<u8> = Rgba([0u8, 0u8, 0u8, 255u8]);
@@ -265,9 +275,7 @@ const MARGIN_TOP: u32 = 20;
 const IMAGE_SIZE: u32 = 600;
 const FONT_DATA: &[u8] = include_bytes!("../../assets/VGA.ttf");
 
-
 fn generate_console_output<T: Ord + Copy>(messages: Vec<ConsoleMessage<T>>) -> Cow<'static, [u8]> {
-    
     let f1 = FontArc::try_from_slice(FONT_DATA).unwrap();
     let font = f1.as_scaled(PxScale::from(FONT_SIZE));
 
@@ -293,8 +301,16 @@ fn generate_console_output<T: Ord + Copy>(messages: Vec<ConsoleMessage<T>>) -> C
     // Compute image dimensions
     let original_width = MARGIN_LEFT * 2 + (max_indent + 1) * INDENT_WIDTH + max_text_width;
     let original_height = MARGIN_TOP * 2 + total_lines * LINE_HEIGHT;
-    let uncapped_height = if original_height > IMAGE_SIZE { original_height } else { IMAGE_SIZE };
-    let uncapped_width = if original_width > IMAGE_SIZE { original_width } else { IMAGE_SIZE };
+    let uncapped_height = if original_height > IMAGE_SIZE {
+        original_height
+    } else {
+        IMAGE_SIZE
+    };
+    let uncapped_width = if original_width > IMAGE_SIZE {
+        original_width
+    } else {
+        IMAGE_SIZE
+    };
 
     let mut img = ImageBuffer::from_pixel(uncapped_width, uncapped_height, Rgba([0, 0, 0, 255]));
 
@@ -308,10 +324,7 @@ fn generate_console_output<T: Ord + Copy>(messages: Vec<ConsoleMessage<T>>) -> C
 
     // Save the image to a buffer
     let mut buffer = Cursor::new(Vec::new());
-    img.write_to(&mut buffer, image::ImageFormat::Png)
-        .unwrap();
-    
-    
+    img.write_to(&mut buffer, image::ImageFormat::Png).unwrap();
 
     // Return the image bytes
     Cow::Owned(buffer.into_inner())
@@ -362,7 +375,10 @@ fn render_message<T: Ord + Copy>(
             draw_line_segment_mut(
                 img,
                 (line_start_x as f32, child_y as f32),
-                (line_start_x as f32 + (INDENT_WIDTH - (INDENT_WIDTH / 4)) as f32, child_y as f32),
+                (
+                    line_start_x as f32 + (INDENT_WIDTH - (INDENT_WIDTH / 4)) as f32,
+                    child_y as f32,
+                ),
                 GREEN,
             );
         }
@@ -404,7 +420,10 @@ fn max_indent_level<T: Ord + Copy>(message: &ConsoleMessage<T>, current_level: u
     max_level
 }
 
-fn compute_max_text_width<T: Ord + Copy>(message: &ConsoleMessage<T>, font: &PxScaleFont<&FontArc>) -> u32 {
+fn compute_max_text_width<T: Ord + Copy>(
+    message: &ConsoleMessage<T>,
+    font: &PxScaleFont<&FontArc>,
+) -> u32 {
     let mut max_width = text_width(font, &message.message);
     for child in &message.children {
         let width = compute_max_text_width(child, font);
