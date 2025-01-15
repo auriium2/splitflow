@@ -38,6 +38,9 @@ extern crate log;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
+
+    //TODO cronguy: schedule all the repeating tasks here, then move to a separate thread and give that thread a async recv channel
+
     console_subscriber::init();
     
     //setup log forwarding
@@ -54,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     
 
 
-    let core = Arc::new(core::load_data()?);
+    let core = Arc::new(core::load_data().await?);
     let (start_tx, mut start_rx) = mpsc::channel(1);
 
     //MESSAGES AND SCHEDULING
@@ -86,7 +89,13 @@ async fn main() -> anyhow::Result<()> {
     }
 
     async fn heartbeat_rssfeed(rss_console_tx: Sender<RSSCommand>) -> () {
-        let _ = rss_console_tx.try_send(RSSCommand::RunProcess); // i am BUSY mother fu
+        info!("heartbeat rssfeed!");
+
+        let ov = rss_console_tx.try_send(RSSCommand::RunProcess); // i am BUSY mother fu
+
+        if let Err(why) = ov {
+            error!("Error sending RSS command: {why:?}")
+        }
     }
     let three = rss_con_tx.clone();
     let mut scheduler: AsyncScheduler<Utc, ChronoTimeProvider> = AsyncScheduler::with_tz(Utc);
@@ -109,6 +118,8 @@ async fn main() -> anyhow::Result<()> {
             sleep(Duration::from_millis(100)).await;
         }
     });
+
+
 
     //DISCORD STUFF
     let token: String = { core.config.discord_token.clone() };
@@ -159,18 +170,19 @@ async fn main() -> anyhow::Result<()> {
         });
     }
     
+    //run perfmon daemon
     tokio::spawn(async {
         task_perfmon(perfmon_core, perfmon_client, perfmon_rx).await;
     });
-  
+
+    //run rss daemon
     tokio::spawn(async {
-        scrape::RSSTask::new(rss_core, rss_rx, rss_con_tx, )?.run().await;
-        let e = scrape::task_update_rss(rss_core, rss_rx, rss_con_tx).await;
-        
+        let e = scrape::RSSTask::new(rss_core, rss_rx, rss_con_tx, ).expect("something went wrong starting rss").run().await;
+
         if e.is_err() {
             log::error!("Error processing rss: {:?}", e.err().unwrap())
         }
-        
+
         return
     });
 

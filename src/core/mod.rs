@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use mongodb::Client;
 use mongodb::options::ClientOptions;
+use quick_cache::sync::Cache;
 use sled::Tree;
-use crate::core::database::CoreDB;
+use crate::core::database::{FilingDocument, CoreDB, SignpostDocument};
 
 pub mod database;
 
@@ -11,14 +12,24 @@ pub mod database;
 const APP_NAME: &str = "strider";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct StriderConfig {
+pub struct StriderConfig {
     pub discord_token: String,
+    pub mongo_user: String,
+    pub mongo_password: String,
+    pub proxy_user: String,
+    pub proxy_pass: String,
 }
 
 impl Default for StriderConfig {
     fn default() -> Self {
+        
+        //TODO: remove these before we publish to the funny quantjob portfolio
         StriderConfig {
-            discord_token: "MTI5NDQ2MDM3NzQ5NjU1NTU3MQ.Gn0pt_.rVieVlz58vTxDUU7gT1AaxKlFVOUnsF_cJBn8g".to_string()
+            discord_token: "MTI5NDQ2MDM3NzQ5NjU1NTU3MQ.Gn0pt_.rVieVlz58vTxDUU7gT1AaxKlFVOUnsF_cJBn8g".to_string(),
+            mongo_user: "admin".to_string(),
+            mongo_password: "DHOeETe48VOOg4WN".to_string(),
+            proxy_user: "desouisv-rotate".to_string(),
+            proxy_pass: "fw7rphncsa5e".to_string(),
         }
     }
 }
@@ -26,65 +37,28 @@ impl Default for StriderConfig {
 pub struct Core {
     pub is_init: AtomicBool,
     pub config: StriderConfig,
-
-    /// map signpost key -> signpost location OR role
-    pub discord_db: Tree,
-
-    /// i have no idea
-    pub general_knowledge_db: Tree,
-
-    /// map &str -> bool
-    pub document_db: Tree,
-
-    /// map company -> playdata
-    pub play_db: Tree,
-    
     pub db: CoreDB
 }
 
-fn assert_send_sync<T: Send + Sync>(t: T) {}
 
-pub fn load_data() -> anyhow::Result<Core> {
-    let cfg: StriderConfig = confy::load(APP_NAME, None)?;
+pub async fn load_data() -> anyhow::Result<Core> {
     let path = confy::get_configuration_file_path(APP_NAME, "config")?;
     log::info!("The configuration file path is: {:#?}", path);
+    let cfg: StriderConfig = confy::load(APP_NAME, None)?;
 
-    let path = confy::get_configuration_file_path(APP_NAME, None)?;
-    log::info!("The database file path is: {:#?}", &path);
-
-
-    // A Client is needed to connect to MongoDB:
-    // An extra line of code to work around a DNS issue on Windows:
-
-    let options =
-        ClientOptions::parse_with_resolver_config(&client_uri, ResolverConfig::cloudflare())
-            .await?;
-    let client = Client::with_options(options)?;
-
-    client.database("strider").collection("ass").fin()
-    // Print the databases in our MongoDB cluster:
-    println!("Databases:");
-    for name in client.list_database_names(None, None).await? {
-        println!("- {}", name);
-    }
-    Ok(())
-
-
-    let db = sled::open("db")?;
-    let discord_db = db.open_tree("signpost_db")?; //TODO fix this shit
-    let general_knowledge_db = db.open_tree(b"knowledge_db")?;
-    let company_db = db.open_tree(b"company_db")?;
-    let play_db = db.open_tree(b"play_db")?;
-
+    let client = Client::with_uri_str(format!("mongodb+srv://admin:{}@cluster0.5ihgc.mongodb.net/",cfg.mongo_password )).await?;
+    let signpost_db = client.database("splitflow").collection::<SignpostDocument>("signposts");
+    let filing_db = client.database("splitflow").collection::<FilingDocument>("filings");
+    let filing_cache: Cache<UUID, Option<FilingDocument>> = Cache::new(300);
 
     Ok(Core {
         is_init: AtomicBool::new(false),
         config: cfg,
-
-        discord_db,
-        general_knowledge_db,
-        document_db: company_db,
-        play_db,
+        db: CoreDB::new(
+            signpost_db,
+            filing_db,
+            filing_cache
+        ),
     })
 }
 

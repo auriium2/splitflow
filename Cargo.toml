@@ -42,6 +42,7 @@ regex = "1.11.0"
 mongodb = "3.1.1"
 bson = "2.13.0"
 quick_cache = "0.6.9"
+tokio-cron-scheduler = "0.13.0"
 
 [build]
 rustflags = ["--cfg", "tokio_unstable"]

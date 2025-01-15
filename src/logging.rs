@@ -39,7 +39,7 @@ impl log::Log for ConsoleLogger {
     fn log(&self, record: &Record) { 
         if self.enabled(record.metadata()) { 
             self.logger.log(record);
-            self.tx.try_send(ConsoleCommand::Print(ConsoleMessage::new(record.args().to_string()),false)).unwrap();
+            //self.tx.try_send(ConsoleCommand::Print(ConsoleMessage::new(record.args().to_string()),false)).unwrap();
         }
     }
 

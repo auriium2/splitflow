@@ -1,8 +1,7 @@
-# strider
-> financial exploitation software
+# splitflow
+> ~~financial exploitation software~~ rust demonstrator project
 
 ## what is this?
-- this needs a better name
 - scrapes the sec database of 10k and 8k filings 
 - if it detects upcoming reverse stock splits, it will watch the stock
 - a day before the split, it will buy the stock and hold it
@@ -10,18 +9,24 @@
 
 ## why?
 - i am broke and the quant firms aren't giving me a job
+- i need a production-style rust project to show off that isn't closed source. 
+- This one i built in 8 days.
 
 ## features
 - very fast scanning!
-- discord interface so i can do it from my phone!
+- discord interface so i can watch from my phone!
 - automated!
 - ai accelerated™
+- doesn't use rest apis like lesser programmers do
 
 ## technical description
 - Scans in parallel!
 - Uses local ml inference to detect stock split details!
 - Mongodb with a cache in front for storage!
+- postgres for task tracking!
+- robinhood support, will add more stuff later!
 
 ## next step
-- rewrite to support many users (add a database) and sell an easier version of it on whop!
+- rewrite to support many users and sell an easier version of it on whop!
+- automated user onboarding and whop api integration
 - if the whop users find this and are skilled enough to compile it they can use it!

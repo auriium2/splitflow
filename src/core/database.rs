@@ -1,16 +1,16 @@
 use crate::core::UUID;
 use anyhow::Result;
-use bson::{doc, Bson};
+use bson::doc;
 use mongodb::Collection;
 use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Deserialize, Serialize, Debug)]
-pub struct CompanyDocument {
-    
+#[derive(Copy, Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
+pub struct FilingDocument {
+    parsed: bool
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
 pub struct SignpostDocument {
     signpost_id: String,
     pub channel_id: String,
@@ -25,8 +25,8 @@ impl SignpostDocument {
 
 pub struct CoreDB {
     signpost_db: Collection<SignpostDocument>,
-    document_db: Collection<CompanyDocument>,
-    document_cache: Cache<UUID, Option<CompanyDocument>>
+    filing_db: Collection<FilingDocument>,
+    filing_cache: Cache<UUID, Option<FilingDocument>>
     
     //play collection
     //play cache
@@ -34,6 +34,12 @@ pub struct CoreDB {
 
 type OldID = u64;
 impl CoreDB {
+    
+    pub async fn get_signpost(&self, signpost_id: String) -> Result<Option<SignpostDocument>> {
+        let query = doc! { "signpost_id": signpost_id };
+        let signpost = self.signpost_db.find_one(query.clone()).await?;
+        Ok(signpost)
+    }
     
     pub async fn place_or_move_signpost(&self, new_signpost: SignpostDocument) -> Result<Option<SignpostDocument>> {
         let query = doc! { "signpost_id": &new_signpost.signpost_id };
@@ -52,27 +58,29 @@ impl CoreDB {
         }
         
     }
-
     
-    pub async fn is_present(&self, uuid: &UUID) -> Result<bool> {
-        let cache_option = self.document_cache.get(uuid);
+    pub async fn get_filing_document(&self, uuid: &UUID) -> Result<Option<FilingDocument>> {
+        let cache_option = self.filing_cache.get(uuid);
         if cache_option.is_some() {
-            Ok(true)
+            Ok(cache_option.unwrap())
         } else {
             //let's ask the database then?
-            
-            let database_option: Option<CompanyDocument> = self.document_db.find_one(doc! {
+
+            let database_option: Option<FilingDocument> = self.filing_db.find_one(doc! {
                 "uuid": uuid
             }).await?;
-            
-           if database_option.is_none() {
-               Ok(false) //i could write to the cache that theres no document but theres really no point
-           } else {
-               self.document_cache.insert(uuid.clone(), database_option);                //update the cache
-               Ok(true)
-           }
+
+            if database_option.is_none() {
+                Ok(None) //i could write to the cache that theres no document but theres really no point
+            } else {
+                self.filing_cache.insert(uuid.clone(), database_option);                //update the cache
+                Ok(database_option)
+            }
         }
-        
+    }
+
+    pub fn new(signpost_db: Collection<SignpostDocument>, filing_db: Collection<FilingDocument>, filing_cache: Cache<UUID, Option<FilingDocument>>) -> Self {
+        Self { signpost_db, filing_db, filing_cache }
     }
 }
 

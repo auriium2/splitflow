@@ -1,7 +1,10 @@
 #![feature(async_closure)]
 
 mod browser;
-mod rss_detector;
+mod rss_presence;
+mod rss_inference;
+
+use rayon::prelude::*;
 
 use chrono::{DateTime, Utc};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -25,6 +28,10 @@ use crate::core::{Body, Core, Link, UUID};
 
 use crate::buysell::BuysellCommand;
 use scraper::{Html, Selector};
+use crate::scrape::rss_presence::RSSPhaseOneDetector;
+
+//TODO we need to rewrite this to deal with Strings better instead of cloning all over the place
+//i love rapid development "practices"
 
 pub enum RSSCommand {
     ResetDay,
@@ -70,8 +77,7 @@ pub struct RSSTask {
     client: Client,
     core: Arc<Core>,
     rx: Receiver<RSSCommand>,
-    tx_console: Sender<DateCommand>,
-    tx_orders: Sender<BuysellCommand>
+    tx_console: Sender<DateCommand>
 }
 
 struct UUIDAndLink {
@@ -80,12 +86,12 @@ struct UUIDAndLink {
 }
 
 impl RSSTask {
-    pub fn new(core: Arc<Core>, rx: Receiver<RSSCommand>, tx_console: Sender<DateCommand>, tx_orders: Sender<BuysellCommand>) -> Result<Self> {
+    pub fn new(core: Arc<Core>, rx: Receiver<RSSCommand>, tx_console: Sender<DateCommand>) -> Result<Self> {
         let client = Client::builder()
-            .proxy(Proxy::https("socks5://p.webshare.io:80")?.basic_auth("desouisv-rotate","fw7rphncsa5e"))
+            .proxy(Proxy::https("socks5://p.webshare.io:80")?.basic_auth(core.config.proxy_user.as_str(), core.config.proxy_pass.as_str()))
             .build()?;
 
-        Ok(Self { client, core, rx, tx_console, tx_orders })
+        Ok(Self { client, core, rx, tx_console})
     }
     
     async fn log(&self, msg: &str) -> Result<()> {
@@ -130,10 +136,13 @@ impl RSSTask {
         feed_urls.extend(feed6k.entries);
         feed_urls.extend(feed8k.entries);
         //
-        let unseen_uuids: Vec<UUIDAndLink> = feed_urls.iter().filter_map(|a| {
+
+        let unseen_uuids = stream::iter(feed_urls).filter_map(|a| async move {
             let id_copy = a.id.clone();
             let id_copy2 = id_copy.clone();
-            let out = self.core.document_db.get(id_copy);
+            let out = self.core.db.get_filing_document(&id_copy).await;
+
+            //TODO this is a problem, if the db throws db errors we just swallow them
             if out.is_err() { return None; }
             if out.unwrap().is_some() { return None; }
             let ved: Option<UUIDAndLink> = {
@@ -143,12 +152,12 @@ impl RSSTask {
                 Some(UUIDAndLink {uuid: id_copy2, link: rr})
             };
             return ved;
-        }).collect::<Vec<UUIDAndLink>>();
+        }).collect::<Vec<UUIDAndLink>>().await;
 
         Ok((size6k, size8k, unseen_uuids))
     }
     
-    async fn visit_intermediaries(&self, headers: HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
+    async fn visit_intermediaries(&self, headers: &HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
         let max_progress = unseen_ids.len() as u32;
         let hub_counter = counter.clone();
 
@@ -175,7 +184,7 @@ impl RSSTask {
                             }
                         }},
                         async {
-                            let out = fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers).await;
+                            let out = fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), headers).await;
                             killsig_tx.send(()).expect("oops");
                             return out;
                         }
@@ -237,10 +246,7 @@ impl RSSTask {
 
             //batch code to db
             { 
-                let mut batch: Batch = Batch::default();
-                for e in &unseen_ids {
-                    batch.insert(&*e.uuid, bincode::serialize(&true)?); //write to db
-                }
+                
 
                 //TODO: Write the batch
             }
@@ -255,7 +261,7 @@ impl RSSTask {
                 ).await?;
                 
                 let counter = Arc::new(AtomicI32::new(0));
-                let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(headers, unseen_ids, counter).await?;
+                let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
 
                 info!("[SCAN] Extracting intermediaries");
                 self.tx_console.send(DateCommand::Print(
@@ -279,8 +285,17 @@ impl RSSTask {
             //parse through all bodies
             {
                 let filings_counter = Arc::new(AtomicI32::new(0));
-                let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers.clone()).await?;
+                let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, &headers).await?;
+                let everything = extract_has_split(filing_bodies).await?;
+                
+                info!("[SCAN] Extracted intermediaries");
+                
+                let v = everything.iter().filter(|a| { a.2 }).count();
+                
+                info!("[SCAN] potential candidates count: {}", v);
             }
+            
+            
 
             
 
@@ -295,11 +310,12 @@ impl RSSTask {
             Ok(())
         };
 
-        if rs.is_err() {
+        rs
+
+        /*if rs.is_err() {
             let v = rs.err().unwrap().to_string();
             error!("something went wrong: {}",v.clone());
-
-        }
+        }*/
     }
 
     pub async fn run(mut self) -> Result<()>  {
@@ -329,7 +345,7 @@ impl RSSTask {
 
 }
 
-async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: HeaderMap) -> Result<Vec<(UUID, Body)>> {
+async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: &HeaderMap) -> Result<Vec<(UUID, Body)>> {
     let concurrency_limit = 5;
     let delay_between_requests = Duration::from_millis(50);
 
@@ -345,22 +361,28 @@ async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<Atomi
             Ok((target.0,body))
         }
     }))
-        .buffer_unordered(concurrency_limit)
+        .buffer_unordered(concurrency_limit) //io concurrency
         .collect::<Vec<_>>() // Collect results into a Vec
         .await;
 
     Ok(results.into_iter().filter_map(|i: anyhow::Result<_>| {i.ok()}).collect::<Vec<_>>())
 }
 
-async fn extract_has_rss(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID,bool)>> {
-    stream::iter(bodies)
-        .map(|body| {
-            async move {
-                body.
-                
-                
-            }
-        });
+async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, bool)>> {
+
+    let contents = tokio::task::spawn_blocking(move || {
+        let detector = Arc::new(RSSPhaseOneDetector::new());
+        
+        let extracted = bodies.into_par_iter().map(|body| {
+            let ae = detector.detect_rss_potential(&*body.1);
+            
+            return (body.0, body.1, ae)
+        }).collect::<Vec<_>>();
+        
+        extracted
+    }).await?;
+    
+    Ok(contents)
 }
 
 async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> {
@@ -388,7 +410,7 @@ async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> 
                 Ok((body.0,result.unwrap()))
             }
         })
-        .buffer_unordered(10) // Adjust concurrency limit as needed
+        .buffer_unordered(10) //TODO: this probably should be done on a different thread pool than the io pool
         .collect::<Vec<_>>()
         .await;
 

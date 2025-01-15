@@ -9,17 +9,16 @@ pub enum PerfmonCommand {
     Die
 }
 
-pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<PerfmonCommand>) {
+pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<PerfmonCommand>) -> anyhow::Result<()> {
     while let Some(cmd) =  rx.recv().await {
-        let opt = core.discord_db.get(PERFMON_BB).unwrap();
+        let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;
 
         match cmd {
             PerfmonCommand::Tick => {
                 if opt.is_some() {
                     let contents = opt.unwrap();
-                    let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
-                    let old_channel = ChannelId::new(old.channel_id);
-                    let edit = old_channel.edit_message(&ctx, old.message_id, EditMessage::new().embed(generate_perfmon_embed(true))).await;
+                    let old_channel = ChannelId::new(contents.channel_id.parse()?);
+                    let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(true))).await;
 
                     if let Err(why) = edit {
                         eprintln!("Error sending message: {why:?}");
@@ -29,9 +28,8 @@ pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<Perf
             PerfmonCommand::Die => {
                 if opt.is_some() {
                     let contents = opt.unwrap();
-                    let old = bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
-                    let old_channel = ChannelId::new(old.channel_id);
-                    let edit = old_channel.edit_message(&ctx, old.message_id, EditMessage::new().embed(generate_perfmon_embed(false))).await;
+                    let old_channel = ChannelId::new(contents.channel_id.parse()?);
+                    let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(false))).await;
 
                     if let Err(why) = edit {
                         eprintln!("Error sending message: {why:?}");
@@ -40,6 +38,8 @@ pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<Perf
             }
         }
     }
+    
+    Ok(())
    
 }
 

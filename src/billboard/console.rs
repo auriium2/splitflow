@@ -7,16 +7,14 @@ use chrono::{DateTime, Utc};
 use circular_buffer::CircularBuffer;
 use image::{ImageBuffer, Rgba};
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
-use serenity::all::{
-    ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http,
-    Timestamp,
-};
+use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http, MessageId, Timestamp};
 use tokio::sync::mpsc::Receiver;
 
 use crate::billboard::BillboardLocation;
 use crate::core::Core;
+use crate::core::database::SignpostDocument;
 
-// code
+// TODO: this code needs to be rewritten to not use pngs for displaying text, lol
 pub const IMAGE_NAME: &str = "console.png";
 
 #[derive(Clone, Default)]
@@ -53,16 +51,14 @@ impl Console<DateTime<Utc>> {
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 ConsoleCommand::Tick => {
-                    let opt = self.core.discord_db.get(self.id)?;
+                    let opt = self.core.db.get_signpost(self.id.to_string()).await?;
                     if opt.is_some() {
                         let frend = generate_console_output(buf.to_vec());
                         let contents = opt.unwrap();
-                        let old =
-                            bincode::deserialize::<BillboardLocation>(contents.as_ref())?;
-                        let old_channel = ChannelId::new(old.channel_id);
+                        let old_channel = ChannelId::new(contents.channel_id.parse()?);
 
                         let edit =
-                            generate_edit(&self.ctx, self.name, false, frend, old, old_channel).await;
+                            generate_edit(&self.ctx, self.name, false, frend, contents, old_channel).await;
 
                         if let Err(why) = edit {
                             eprintln!("Error sending message: {why:?}");
@@ -107,16 +103,13 @@ impl Console<u8> {
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 OrderCommand::Tick => {
-                    let opt = core.discord_db.get(self.id).unwrap();
+                    let opt = self.core.db.get_signpost(self.id.to_string()).await?;
                     if opt.is_some() {
                         let frend = generate_console_output(storage.clone());
                         let contents = opt.unwrap();
-
-                        let old =
-                            bincode::deserialize::<BillboardLocation>(contents.as_ref()).unwrap();
-                        let old_channel = ChannelId::new(old.channel_id);
+                        let old_channel = ChannelId::new(contents.channel_id.parse()?);
                         let edit =
-                            generate_edit(&ctx, self.name, false, frend, old, old_channel).await;
+                            generate_edit(&ctx, self.name, false, frend, contents, old_channel).await;
 
                         if let Err(why) = edit {
                             eprintln!("Error sending message: {why:?}");
@@ -137,17 +130,20 @@ impl Console<u8> {
     }
 }
 
+//TODO make this performant and not graphical
 async fn generate_edit<'a>(
     ctx: &Arc<Http>,
     name: &str,
     notify: bool,
     frend: Cow<'a, [u8]>,
-    old: BillboardLocation,
+    old: SignpostDocument,
     old_channel: ChannelId,
 ) -> anyhow::Result<()> {
+    let id: MessageId = MessageId::new(old.message_id.parse()?);
+    
     let edit = old_channel
-        .edit_message(&ctx, u64::from(old.message_id), {
-            let mut msg = EditMessage::new()
+        .edit_message(&ctx, id, {
+            let msg = EditMessage::new()
                 .remove_all_attachments()
                 .new_attachment(CreateAttachment::bytes(frend, IMAGE_NAME))
                 .embed(generate_console_embed(true, name));
@@ -158,7 +154,7 @@ async fn generate_edit<'a>(
 
             msg
         })
-        .await;
+        .await?;
     Ok(())
 }
 
