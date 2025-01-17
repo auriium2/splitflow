@@ -15,6 +15,8 @@ impl RSSPhaseOneDetector<22> {
 
 
     //please run this in rayon
+    //why regex slow ._.
+    //please stop running in debug profile
     
     
     pub fn detect_rss_potential(&self, filing_text: &str) -> RssPresence {
@@ -32,8 +34,7 @@ impl RSSPhaseOneDetector<22> {
         // Decide
         RssPresence(has_synonym || has_ratio, has_synonym, has_ratio)
     }
-
-
+    
     pub fn new() -> RSSPhaseOneDetector<22> {
         let patterns = [
             "reverse ADS split",

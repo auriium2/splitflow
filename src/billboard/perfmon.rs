@@ -3,6 +3,8 @@ use crate::core::Core;
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
+use tracing::{error, info, warn};
+
 
 pub enum PerfmonCommand {
     Tick,

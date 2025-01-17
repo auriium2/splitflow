@@ -6,6 +6,8 @@ use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tracing::{error, info, instrument, warn};
+
 
 pub mod database;
 
@@ -43,17 +45,16 @@ pub struct Core {
     pub db: CoreDB
 }
 
-
 pub async fn load_data() -> anyhow::Result<Core> {
     let path = confy::get_configuration_file_path(APP_NAME, "config")?;
-    log::info!("The configuration file path is: {:#?}", path);
+    info!("The configuration file path is: {:#?}", path);
     let cfg: StriderConfig = confy::load(APP_NAME, None)?;
 
     let client = Client::with_uri_str(format!("mongodb+srv://admin:{}@cluster0.5ihgc.mongodb.net/",cfg.mongo_password )).await?;
     let signpost_db = client.database("splitflow").collection::<SignpostDocument>("signposts");
     let filing_db = client.database("splitflow").collection::<FilingDocument>("filings");
     let filing_cache: Cache<UUID, Option<Arc<FilingDocument>>> = Cache::new(300);
-    
+
     info!("Connected to database!");
     
     Ok(Core {

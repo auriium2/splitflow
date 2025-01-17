@@ -6,6 +6,7 @@ mod rss_inference;
 
 use rayon::prelude::*;
 
+use tracing::{error, info, instrument, warn};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
@@ -15,7 +16,6 @@ use rand::prelude::SliceRandom;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{header, Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,9 +31,7 @@ use crate::core::database::FilingDocument;
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::{Html, Node, Selector};
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Timestamp};
-use crate::scrape::rss_inference::gpt_infer;
-//TODO we need to rewrite this to deal with Strings better instead of cloning all over the place
-//i love rapid development "practices"
+use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 
 pub enum RSSCommand {
     ResetDay,
@@ -44,22 +42,12 @@ pub enum RSSCommand {
 }
 
 struct BillboardState {
-    time_stats: TimeStats,
     doing: RSSGoal,
     tasks: Vec<String>,
 }
 
 const TIMESTATS_KEY: &[u8; 9] = b"timestats";
 
-#[derive(Copy, Clone, Serialize, Deserialize, Default)]
-struct TimeStats {
-    scanned_day: i64,
-    scanned_week: i64,
-    scanned_month: i64,
-    found_day: i64,
-    found_week: i64,
-    found_month: i64,
-}
 
 #[derive(Debug)]
 pub enum RSSGoal {
@@ -111,6 +99,7 @@ impl RSSTask {
 
     }
 
+    #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
         let mut headers = HeaderMap::new();
         let (company_name, email) = generate_company_name_and_email();
@@ -128,6 +117,7 @@ impl RSSTask {
         Ok((body6k, body8k, status6k, status8k, headers))
     }
 
+    #[instrument(skip(self, body6k, body8k))]
     async fn merge_feeds_and_collect(&self, body6k: String, body8k: String) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
         //TODO: cloning the 8-k body and generally any of the html bodies around is very expensive
         
@@ -139,7 +129,6 @@ impl RSSTask {
         let mut feed_urls = Vec::new();
         feed_urls.extend(feed6k.entries);
         feed_urls.extend(feed8k.entries);
-        //
 
         let unseen_uuids = stream::iter(feed_urls).filter_map(|mut individual_entry| async move {
             let id_copy = individual_entry.id;
@@ -159,7 +148,8 @@ impl RSSTask {
 
         Ok((size6k, size8k, unseen_uuids))
     }
-    
+
+    #[instrument(skip(self, headers, unseen_ids, counter))]
     async fn visit_intermediaries(&self, headers: &HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
         let max_progress = unseen_ids.len() as u32;
         let hub_counter = counter.clone();
@@ -203,19 +193,22 @@ impl RSSTask {
 
         Ok(hub_bodies)
     }
-
-    async fn logic(&self) -> Result<()> {
+    
+    #[instrument(skip(self))]
+    async fn scan(&self) -> Result<()> {
 
         let rs: Result<()> = {
             //acquire 8ks and 10ks
+            
+            
             let (body6k, body8k, headers) = { 
-                self.log("[SCAN] Scanning top level").await?;
+                self.log("Scanning top level").await?;
 
                 let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
                 let status = status6k.is_success() && status8k.is_success();
 
                 info!("[SCAN] Top level {}, status codes [{}] [{}]", status, status6k, status8k);
-                self.tx_console.send(DateCommand::Print(
+                /*self.tx_console.send(DateCommand::Print(
                     ConsoleMessage::new_children(
                         format!("[SCAN] Top level {}", status).to_string(),
                         vec![
@@ -223,7 +216,7 @@ impl RSSTask {
                             "Now reading...".to_string()
                         ]
                     ), false)
-                ).await?;
+                ).await?;*/
 
                 (body6k, body8k, headers)
             };
@@ -232,7 +225,7 @@ impl RSSTask {
             let unseen_ids = { 
                 let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
 
-                info!("[READ] Merged feeds");
+                info!("Merged feeds");
                 self.tx_console.send(DateCommand::Print(
                     ConsoleMessage::new_children(
                         "[READ] Merged feeds".to_string(),
@@ -249,31 +242,14 @@ impl RSSTask {
             
             //visit intermediaries and extract final urls
             let intermediary_links: Vec<(UUID, Link)> = {
-                info!("[SCAN] Visiting intermediaries");
-                self.tx_console.send(DateCommand::Print(
-                    ConsoleMessage::new(
-                        "[SCAN] Visiting intermediaries...".to_string()
-                    ), false)
-                ).await?;
-                
+                info!("Visiting intermediaries");
                 let counter = Arc::new(AtomicI32::new(0));
                 let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
-
-                info!("[SCAN] Extracting intermediaries");
-                self.tx_console.send(DateCommand::Print(
-                    ConsoleMessage::new(
-                        "[SCAN] Extracting intermediaries...".to_string()
-                    ), false)
-                ).await?;
                 
+                info!("[SCAN] Extracting intermediaries");
                 let intermediary_links: Vec<(UUID, Link)> = extract_8k_links(intermediary_bodies).await?;
 
                 info!("[SCAN] Extracted intermediaries");
-                self.tx_console.send(DateCommand::Print(
-                    ConsoleMessage::new(
-                        "[SCAN] Extracted intermediaries".to_string()
-                    ), false)
-                ).await?;
                 
                 
                 intermediary_links
@@ -309,7 +285,7 @@ impl RSSTask {
                 ), false)
             ).await?;
 
-            let all_filings = everything.into_iter().map(|tuple| {
+            let mut all_filings = everything.into_iter().map(|tuple| {
                 let (uuid, body, presence) = tuple;
                 let now = Utc::now();
                 let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
@@ -317,45 +293,38 @@ impl RSSTask {
                 filing_document
             }).collect::<Vec<FilingDocument>>();
             
-            let candidate_filings = all_filings.iter().filter(|a| { a.is_split.0 }).collect::<Vec<&FilingDocument>>();
-            let candidate_counts = candidate_filings.len();
+            
+            let mut candidate = 0;
+            let mut split = 0;
+
+            let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
+
+
+            //TODO why isnt this in span
+            //run sequentially but there will be so few this doesnt even need to run lol
+            for mut document in &all_filings {
+                if document.is_split.0 {
+                    candidate += 1;
+                    let inference_data = inference.infer(&document.body_contents).await?;
+                    if inference_data.classification == Classification::RoundUp {
+                        split += 1;
+                    }
+                }
+            }
 
             //TODO Whatever is happening before here is laggy as fuck
-            info!("[SCAN] Extracted split status, candidates: {}", candidate_counts);
+            info!("[SCAN] Extracted split status, candidates: {}, actual: {}", candidate, split);
             self.tx_console.send(DateCommand::Print(
                 ConsoleMessage::new(
-                    format!("[SCAN] Extracted split status, candidates: {}", candidate_counts).to_string()
+                    format!("[SCAN] Extracted split status, candidates: {}, actual {}", candidate, split).to_string()
                 ), false)
             ).await?;
             
+            if candidate > 0 {
+                
+            }
             
-            stream::iter(candidate_filings).filter(|a| {
-                async {
-                    let inference = gpt_infer(&self.core.config.gpt_key, &a.body_contents, &self.client).await;
-                        
-                    true
-                }
-            });
-            
- 
-            //let toasts = self.core.db.get_signpost("toasts".to_string()).await?;
-            //push to mongo
-
-            //self.core.db.push_filing_documents(all_filings).await?;
-
-            
-
-
-
-            //update the Full Database Scanner?
-
-
-
-
-
-
-
-
+            self.core.db.push_filing_documents(all_filings).await?;
 
             Ok(())
         };
@@ -380,7 +349,7 @@ impl RSSTask {
         while let Some(command) = self.rx.recv().await {
             match command {
                 RSSCommand::RunProcess => {
-                    self.logic().await?;
+                    self.scan().await?;
                 }
                 _ => {
                     break;
@@ -395,6 +364,7 @@ impl RSSTask {
 
 }
 
+#[instrument(skip_all)]
 async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: HeaderMap) -> Result<Vec<(UUID, Body)>> {
     let concurrency_limit = 5;
     let delay_between_requests = Duration::from_millis(50);
@@ -418,12 +388,17 @@ async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<Atomi
     Ok(results.into_iter().filter_map(|i: anyhow::Result<_>| {i.ok()}).collect::<Vec<_>>())
 }
 
+#[instrument(skip_all, parent = &tracing::Span::current())]
 async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, RssPresence)>> {
 
     let contents = tokio::task::spawn_blocking(move || {
         let detector = Arc::new(RSSPhaseOneDetector::new());
+
+        let active_span = tracing::Span::current();
         
         let extracted = bodies.into_par_iter().map(|body| {
+            let g = active_span.enter();
+            
             let filtered_body = extract_all_text(body.1);
             let ae = detector.detect_rss_potential(filtered_body.as_str());
             
@@ -435,8 +410,9 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
     
     Ok(contents)
 }
-
+#[instrument(skip(bodies), parent = &tracing::Span::current())]
 async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> {
+    info!("test for span loc");
     let table_selector = Arc::new(Selector::parse("table").unwrap());
     let row_selector = Arc::new(Selector::parse("tr").unwrap());
     let cell_selector = Arc::new(Selector::parse("td").unwrap());
@@ -473,7 +449,7 @@ async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> 
 
 
 
-
+#[instrument(skip_all, parent = &tracing::Span::current())]
 async fn process_body(
     body: String,
     table_selector: &Selector,
@@ -530,6 +506,7 @@ async fn process_body(
     Ok(found_link.unwrap())
 }
 
+
 fn generate_domain_from_name(company_name: &str) -> String {
     company_name
         .to_lowercase()               // Convert to lowercase
@@ -538,6 +515,7 @@ fn generate_domain_from_name(company_name: &str) -> String {
         .replace("&", "and")           // Replace & with "and"
 }
 
+#[instrument(skip_all, parent = &tracing::Span::current())]
 fn generate_company_name_and_email() -> (String, String) {
     let company_prefixes = vec![
         "Tech", "Global", "Future", "Net", "Data", "Sky", "Bright", "Prime", "Green",
@@ -562,6 +540,7 @@ fn generate_company_name_and_email() -> (String, String) {
 }
 
 
+#[instrument(skip_all, parent = &tracing::Span::current())]
 fn extract_all_text(html: String) -> String {
     let document = Html::parse_fragment(&html);
     let mut result = String::new();

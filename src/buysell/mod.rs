@@ -7,6 +7,9 @@ pub enum BuysellCommand {
 }
 
 trait MarketAccount {
+    
+    async fn check_ticker_present() -> bool;
+    
     async fn buy();
     async fn sell();
 }
@@ -27,15 +30,20 @@ impl BuySellTask {
     }
 }
 
-//this task should be run every weekday at market open, and rapidly buy/sell all the flagged stocks if they are bad/good
-pub async fn task_buysell(rx: Receiver<BuysellCommand>) {
+struct Robinhood {
     
 }
 
-async fn buy() -> anyhow::Result<()> {
-    todo!();
-}
+impl MarketAccount for Robinhood {
+    async fn check_ticker_present() -> bool {
+        todo!()
+    }
 
-async fn sell() -> anyhow::Result<()> {
-    todo!();
+    async fn buy() {
+        todo!()
+    }
+
+    async fn sell() {
+        todo!()
+    }
 }

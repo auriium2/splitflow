@@ -7,6 +7,7 @@ use crate::{DynNothing, PoiseContext};
 
 pub mod perfmon;
 pub mod console;
+mod toasts;
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn set_alerted(ctx: PoiseContext<'_>,) -> DynNothing {

@@ -9,6 +9,8 @@ use image::{ImageBuffer, Rgba};
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
 use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http, MessageId, Timestamp};
 use tokio::sync::mpsc::Receiver;
+use tracing::{error, info, warn};
+
 
 use crate::billboard::BillboardLocation;
 use crate::core::database::SignpostDocument;
@@ -47,6 +49,7 @@ impl<K: Ord + Copy> Console<K> {
 
 impl Console<DateTime<Utc>> {
     pub async fn task(mut self) -> anyhow::Result<()> {
+     
         let mut buf = CircularBuffer::<17, ConsoleMessage<DateTime<Utc>>>::new();
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
