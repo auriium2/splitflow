@@ -45,6 +45,7 @@ pub struct Core {
     pub db: CoreDB
 }
 
+#[instrument]
 pub async fn load_data() -> anyhow::Result<Core> {
     let path = confy::get_configuration_file_path(APP_NAME, "config")?;
     info!("The configuration file path is: {:#?}", path);

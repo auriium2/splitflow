@@ -2,11 +2,10 @@
 
 mod browser;
 pub mod rss_presence;
-mod rss_inference;
+pub mod rss_inference;
 
 use rayon::prelude::*;
 
-use tracing::{error, info, info_span, instrument, span, warn, Level};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
@@ -22,17 +21,18 @@ use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{join, sync};
+use tracing::{error, info, info_span, instrument, span, warn, Level};
 
 use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
 use crate::buysell::BuysellCommand;
 use crate::core::database::FilingDocument;
+use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::{Html, Node, Selector};
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Timestamp};
 use tracing::log::trace;
-use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 
 pub enum RSSCommand {
     ResetDay,
@@ -225,48 +225,45 @@ impl RSSTask {
         let everything = extract_has_split(filing_bodies).await?;
 
         trace!("scanning 8-k pages for split status");
-        let mut all_filings = everything.into_iter().map(|tuple| {
+        let all_filings = everything.into_iter().map(|tuple| {
             let (uuid, body, presence) = tuple;
             let now = Utc::now();
             let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
 
             filing_document
         }).collect::<Vec<FilingDocument>>();
+        
+        trace!("collecting interesting documents");
+        let mut key_documents = all_filings.iter()
+            .filter(|d| d.is_split.0)
+            .map(|d| d.clone()) //todo stop being lazy
+            .collect::<Vec<FilingDocument>>();
 
+        trace!("pushing filings to db");
+        self.core.db.push_filing_documents(all_filings).await?;
 
-        let mut candidate = 0;
+        info!("candidate count: {}", key_documents.len());
         let mut split = 0;
 
+        trace!("running inference");
         let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
-
-
-        //run sequentially but there will be so few this doesnt even need to run lol
-        for mut document in &all_filings {
-            if document.is_split.0 {
-                candidate += 1;
-                let inference_data = inference.infer(&document.body_contents).await?;
-                if inference_data.classification == Classification::RoundUp {
-                    split += 1;
-                }
-
-                //update doc
-                
+        
+        for document in key_documents.iter_mut() {
+            let inference_data = inference.infer(&document.body_contents).await?;
+            if inference_data.classification == Classification::RoundUp {
+                split += 1;
             }
+
+            //update doc
+            document.post_inference = Some(inference_data);
         }
-
-        //TODO Whatever is happening before here is laggy as fuck
-        info!("Extracted split status, candidates: {}, actual: {}", candidate, split);
-        self.tx_console.send(DateCommand::Print(
-            ConsoleMessage::new(
-                format!("Extracted split status, candidates: {}, actual {}", candidate, split).to_string()
-            ), false)
-        ).await?;
-
-        if candidate > 0 {
-
-        }
-
-        self.core.db.push_filing_documents(all_filings).await?;
+        
+        trace!("pushing inferred filings to db");
+        self.core.db.push_filing_documents(key_documents).await?;
+        
+        info!("split count: {}", split);
+        //TODO notify discord
+        
 
         Ok(())
     }

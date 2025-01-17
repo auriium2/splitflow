@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::instrument;
 
@@ -23,7 +23,7 @@ Document:
 {}
 "#;
 
-#[derive(Deserialize, Debug, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
 pub enum Classification {
     RoundUp,
     RoundDown,
@@ -31,12 +31,12 @@ pub enum Classification {
     Other,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
 pub struct InferenceOutput {
     pub reasoning: String,
     pub ticker: String,
     pub classification: Classification,
-    pub ex_date: Option<DateTime<Utc>>   
+    pub ex_date: Option<DateTime<Utc>>
 }
 
 pub struct LLMInference<'a> {
@@ -93,7 +93,7 @@ impl Inference for LLMInference<'_> {
 mod tests {
     use super::*;
     use serde_json::json;
-    
+
     #[test]
     fn test_deserialization_with_chatgpt_real_output() {
 

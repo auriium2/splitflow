@@ -1,8 +1,4 @@
-use crate::billboard::console::ConsoleCommand;
-use tracing::{error, info, warn};
-use pretty_env_logger::env_logger::Logger;
 use std::fmt::Debug;
-use tokio::sync::mpsc::Sender;
 /*
 
     He logs to console and then sends log to diskored, silly creature

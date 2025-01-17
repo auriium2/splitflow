@@ -1,4 +1,5 @@
 use crate::core::UUID;
+use crate::scrape::rss_inference::InferenceOutput;
 use crate::scrape::rss_presence::RssPresence;
 use anyhow::Result;
 use bson::{doc, DateTime};
@@ -6,34 +7,27 @@ use mongodb::Collection;
 use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
-#[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
-pub struct Inference {
-    is_fractional: bool,
-    fraction: (usize, usize),
-    activation_date: DateTime,
-    sell_date: DateTime,
-}
+use tracing::instrument;
 
 #[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
 pub struct FilingDocument {
     
     //id, possible company
-    uuid: String,
-    published: DateTime,
+    pub uuid: String,
+    pub published: DateTime,
     
     //metrics
     pub is_split: RssPresence,
 
     //post inference
-    post_inference: Option<Inference>,
+    pub post_inference: Option<InferenceOutput>,
 
     //mass data
     pub body_contents: String,
 }
 
 impl FilingDocument {
-    pub fn new(uuid: String, published: DateTime, is_split: RssPresence, post_inference: Option<Inference>, body_contents: String) -> Self {
+    pub fn new(uuid: String, published: DateTime, is_split: RssPresence, post_inference: Option<InferenceOutput>, body_contents: String) -> Self {
         Self { uuid, published, is_split, post_inference, body_contents }
     }
 }
@@ -91,6 +85,7 @@ impl CoreDB {
         
     }
     
+    #[instrument(skip_all)]
     pub async fn push_filing_documents(&self, filings: Vec<FilingDocument>) -> Result<()> {
         if filings.is_empty() {
             return Ok(());

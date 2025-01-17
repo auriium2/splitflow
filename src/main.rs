@@ -32,8 +32,8 @@ use tracing::{error, info, warn};
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard, TraceStyle};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{registry, EnvFilter};
 use tracing_subscriber::{prelude::*, registry::Registry};
+use tracing_subscriber::{registry, EnvFilter};
 
 mod billboard;
 mod scrape;
