@@ -6,7 +6,7 @@ mod rss_inference;
 
 use rayon::prelude::*;
 
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, info_span, instrument, span, warn, Level};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
@@ -31,6 +31,7 @@ use crate::core::database::FilingDocument;
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::{Html, Node, Selector};
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Timestamp};
+use tracing::log::trace;
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 
 pub enum RSSCommand {
@@ -196,145 +197,78 @@ impl RSSTask {
     
     #[instrument(skip(self))]
     async fn scan(&self) -> Result<()> {
+        let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
+        let status = status6k.is_success() && status8k.is_success();
+        info!("found {} documents in edgar, status codes [{}] [{}]", status, status6k, status8k);
 
-        let rs: Result<()> = {
-            //acquire 8ks and 10ks
+        //Merge feeds
+        let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
+        info!("found [{}/{}] unique entries in edgar", unseen_ids.len(), size6k + size8k);
+
+        if unseen_ids.len() == 0 {
+            trace!("no new entries found, back to sleep");
             
-            
-            let (body6k, body8k, headers) = { 
-                self.log("Scanning top level").await?;
-
-                let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
-                let status = status6k.is_success() && status8k.is_success();
-
-                info!("[SCAN] Top level {}, status codes [{}] [{}]", status, status6k, status8k);
-                /*self.tx_console.send(DateCommand::Print(
-                    ConsoleMessage::new_children(
-                        format!("[SCAN] Top level {}", status).to_string(),
-                        vec![
-                            format!("Status code 6k: [{}] 8k: [{}]", status6k, status8k).to_string(),
-                            "Now reading...".to_string()
-                        ]
-                    ), false)
-                ).await?;*/
-
-                (body6k, body8k, headers)
-            };
-
-            //Merge feeds
-            let unseen_ids = { 
-                let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
-
-                info!("Merged feeds");
-                self.tx_console.send(DateCommand::Print(
-                    ConsoleMessage::new_children(
-                        "[READ] Merged feeds".to_string(),
-                        vec![
-                            format!("Entry size for 6k: [{}] 8k: [{}]", size6k, size8k).to_string(),
-                            format!("Unique entries: [{}]", unseen_ids.len()).to_string(),
-                            "Now scanning uniques...".to_string()
-                        ]
-                    ), false)
-                ).await?;
-
-                unseen_ids
-            };
-            
-            //visit intermediaries and extract final urls
-            let intermediary_links: Vec<(UUID, Link)> = {
-                info!("Visiting intermediaries");
-                let counter = Arc::new(AtomicI32::new(0));
-                let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
-                
-                info!("[SCAN] Extracting intermediaries");
-                let intermediary_links: Vec<(UUID, Link)> = extract_8k_links(intermediary_bodies).await?;
-
-                info!("[SCAN] Extracted intermediaries");
-                
-                
-                intermediary_links
-            };
-
-            info!("[SCAN] Scanning finals");
-            self.tx_console.send(DateCommand::Print(
-                ConsoleMessage::new(
-                    "[SCAN] Scanning finals".to_string()
-                ), false)
-            ).await?;
-
-            //parse through all bodies
-           let everything: Vec<(UUID, Body, RssPresence)> =  {
-                let filings_counter = Arc::new(AtomicI32::new(0));
-                let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers).await?;
-                let everything = extract_has_split(filing_bodies).await?;
-                
-                everything
-            };
-
-            info!("[SCAN] Scanned finals");
-            self.tx_console.send(DateCommand::Print(
-                ConsoleMessage::new(
-                    "[SCAN] Scanned finals".to_string()
-                ), false)
-            ).await?;
-
-            info!("[SCAN] Looking for splits");
-            self.tx_console.send(DateCommand::Print(
-                ConsoleMessage::new(
-                    "[SCAN] Looking for splits".to_string()
-                ), false)
-            ).await?;
-
-            let mut all_filings = everything.into_iter().map(|tuple| {
-                let (uuid, body, presence) = tuple;
-                let now = Utc::now();
-                let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
-                
-                filing_document
-            }).collect::<Vec<FilingDocument>>();
-            
-            
-            let mut candidate = 0;
-            let mut split = 0;
-
-            let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
+            return Ok(());
+        }
 
 
-            //TODO why isnt this in span
-            //run sequentially but there will be so few this doesnt even need to run lol
-            for mut document in &all_filings {
-                if document.is_split.0 {
-                    candidate += 1;
-                    let inference_data = inference.infer(&document.body_contents).await?;
-                    if inference_data.classification == Classification::RoundUp {
-                        split += 1;
-                    }
+        trace!("visiting edgar intermediary pages");
+        let counter = Arc::new(AtomicI32::new(0));
+        let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
+
+        trace!("extracting 8-k links from intermediaries:");
+        let intermediary_links: Vec<(UUID, Link)> = extract_8k_links(intermediary_bodies).await?;
+
+        trace!("visiting 8-k pages");
+        let filings_counter = Arc::new(AtomicI32::new(0));
+        let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers).await?;
+        let everything = extract_has_split(filing_bodies).await?;
+
+        trace!("scanning 8-k pages for split status");
+        let mut all_filings = everything.into_iter().map(|tuple| {
+            let (uuid, body, presence) = tuple;
+            let now = Utc::now();
+            let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
+
+            filing_document
+        }).collect::<Vec<FilingDocument>>();
+
+
+        let mut candidate = 0;
+        let mut split = 0;
+
+        let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
+
+
+        //run sequentially but there will be so few this doesnt even need to run lol
+        for mut document in &all_filings {
+            if document.is_split.0 {
+                candidate += 1;
+                let inference_data = inference.infer(&document.body_contents).await?;
+                if inference_data.classification == Classification::RoundUp {
+                    split += 1;
                 }
-            }
 
-            //TODO Whatever is happening before here is laggy as fuck
-            info!("[SCAN] Extracted split status, candidates: {}, actual: {}", candidate, split);
-            self.tx_console.send(DateCommand::Print(
-                ConsoleMessage::new(
-                    format!("[SCAN] Extracted split status, candidates: {}, actual {}", candidate, split).to_string()
-                ), false)
-            ).await?;
-            
-            if candidate > 0 {
+                //update doc
                 
             }
-            
-            self.core.db.push_filing_documents(all_filings).await?;
+        }
 
-            Ok(())
-        };
+        //TODO Whatever is happening before here is laggy as fuck
+        info!("Extracted split status, candidates: {}, actual: {}", candidate, split);
+        self.tx_console.send(DateCommand::Print(
+            ConsoleMessage::new(
+                format!("Extracted split status, candidates: {}, actual {}", candidate, split).to_string()
+            ), false)
+        ).await?;
 
-        rs
+        if candidate > 0 {
 
-        /*if rs.is_err() {
-            let v = rs.err().unwrap().to_string();
-            error!("something went wrong: {}",v.clone());
-        }*/
+        }
+
+        self.core.db.push_filing_documents(all_filings).await?;
+
+        Ok(())
     }
 
     pub async fn run(mut self) -> Result<()>  {
@@ -402,6 +336,8 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
             let filtered_body = extract_all_text(body.1);
             let ae = detector.detect_rss_potential(filtered_body.as_str());
             
+            
+            drop(g);
             return (body.0, filtered_body, ae)
         }).collect::<Vec<_>>();
         
@@ -540,7 +476,7 @@ fn generate_company_name_and_email() -> (String, String) {
 }
 
 
-#[instrument(skip_all, parent = &tracing::Span::current())]
+#[instrument(skip_all)]
 fn extract_all_text(html: String) -> String {
     let document = Html::parse_fragment(&html);
     let mut result = String::new();

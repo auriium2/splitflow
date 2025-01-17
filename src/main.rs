@@ -32,7 +32,7 @@ use tracing::{error, info, warn};
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard, TraceStyle};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry;
+use tracing_subscriber::{registry, EnvFilter};
 use tracing_subscriber::{prelude::*, registry::Registry};
 
 mod billboard;
@@ -44,9 +44,17 @@ mod core;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
 
+    let filter = EnvFilter::default()
+        .add_directive("splitflow=trace".parse()?)
+        .add_directive("tokio=warn".parse()?)
+        .add_directive("tokio_cron_scheduler=trace".parse()?)
+        .add_directive("serenity=warn".parse()?);
+
+
     let (chrome_layer, _guard) = ChromeLayerBuilder::new().trace_style(TraceStyle::Async).build();
     let subscriber = registry::Registry::default()
         .with(LevelFilter::INFO)
+        .with(filter)
         .with(chrome_layer)
         .with(tracing_subscriber::fmt::Layer::default().compact());
 
