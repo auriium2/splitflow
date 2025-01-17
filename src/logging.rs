@@ -1,4 +1,4 @@
-use crate::billboard::console::{ConsoleCommand, ConsoleMessage};
+use crate::billboard::console::ConsoleCommand;
 use log::{Level, Metadata, Record};
 use pretty_env_logger::env_logger::Logger;
 use std::fmt::Debug;

@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
-use tokio::sync::mpsc::Receiver;
-use crate::core::Core;
 use crate::billboard::{BillboardLocation, PERFMON_BB};
+use crate::core::Core;
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
+use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 
 pub enum PerfmonCommand {
     Tick,
@@ -21,7 +21,7 @@ pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<Perf
                     let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(true))).await;
 
                     if let Err(why) = edit {
-                        eprintln!("Error sending message: {why:?}");
+                        error!("Error sending message: {why:?}");
                     };
                 }
             }
@@ -32,7 +32,7 @@ pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<Perf
                     let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(false))).await;
 
                     if let Err(why) = edit {
-                        eprintln!("Error sending message: {why:?}");
+                        error!("Error sending message: {why:?}");
                     };
                 }
             }

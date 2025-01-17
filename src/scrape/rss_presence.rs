@@ -1,18 +1,23 @@
 //TODO: use inference
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 pub(crate) struct RSSPhaseOneDetector<const N: usize> {
     synonyms: [&'static str; N],
     regex: Vec<Regex>
 }
 
+#[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
+pub struct RssPresence(pub bool, bool, bool); 
+
 impl RSSPhaseOneDetector<22> {
 
 
     //please run this in rayon
-    pub fn detect_rss_potential(&self, filing_text: &str) -> bool {
+    
+    
+    pub fn detect_rss_potential(&self, filing_text: &str) -> RssPresence {
         let lower = filing_text.to_lowercase();
 
 
@@ -25,7 +30,7 @@ impl RSSPhaseOneDetector<22> {
             .any(|regex| regex.is_match(&lower));
 
         // Decide
-        has_synonym || has_ratio
+        RssPresence(has_synonym || has_ratio, has_synonym, has_ratio)
     }
 
 
@@ -151,7 +156,7 @@ Date: January 10, 2025	By:	/s/ Christian Kanstrup
  
         "#;
         
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap), true);
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap).0, true);
     }
     
     #[test]
@@ -174,6 +179,8 @@ Pursuant to the terms of the Agreement, the Company agreed to pay the Placement 
  
 The representations, warranties and covenants contained in the Agreement were made solely for the benefit of the parties to the Agreement. In addition, such representations, warranties and covenants (i) are intended as a way of allocating the risk between the parties to the Agreement and not as statements of fact, and (ii) may apply standards of materiality in a way that is different from what may be viewed as material by stockholders of, or other investors in, the Company. Moreover, information concerning the subject matter of the representations and warranties may change after the date of the Agreement, which subsequent information may or may not be fully reflected in public disclosures."#;
 
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap), true);
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap).0, true);
     }
+    
+    
 }

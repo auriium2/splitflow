@@ -1,24 +1,24 @@
 #![feature(async_closure)]
 
 mod browser;
-mod rss_presence;
+pub mod rss_presence;
 mod rss_inference;
 
 use rayon::prelude::*;
 
-use chrono::{DateTime, Utc};
-use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use futures::{stream, StreamExt};
+use poise::CreateReply;
 use rand::prelude::SliceRandom;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{header, Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sled::Batch;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{join, sync};
@@ -27,9 +27,11 @@ use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
 use crate::buysell::BuysellCommand;
-use scraper::{Html, Selector};
-use crate::scrape::rss_presence::RSSPhaseOneDetector;
-
+use crate::core::database::FilingDocument;
+use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
+use scraper::{Html, Node, Selector};
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Timestamp};
+use crate::scrape::rss_inference::gpt_infer;
 //TODO we need to rewrite this to deal with Strings better instead of cloning all over the place
 //i love rapid development "practices"
 
@@ -127,6 +129,8 @@ impl RSSTask {
     }
 
     async fn merge_feeds_and_collect(&self, body6k: String, body8k: String) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
+        //TODO: cloning the 8-k body and generally any of the html bodies around is very expensive
+        
         //read the main feeds
         let (feed6k,feed8k) = (parser::parse(body6k.as_bytes())?, parser::parse(body8k.as_bytes())?);
         let (size6k,size8k) = (feed6k.entries.len(), feed8k.entries.len());
@@ -137,19 +141,18 @@ impl RSSTask {
         feed_urls.extend(feed8k.entries);
         //
 
-        let unseen_uuids = stream::iter(feed_urls).filter_map(|a| async move {
-            let id_copy = a.id.clone();
-            let id_copy2 = id_copy.clone();
+        let unseen_uuids = stream::iter(feed_urls).filter_map(|mut individual_entry| async move {
+            let id_copy = individual_entry.id;
             let out = self.core.db.get_filing_document(&id_copy).await;
 
             //TODO this is a problem, if the db throws db errors we just swallow them
             if out.is_err() { return None; }
             if out.unwrap().is_some() { return None; }
             let ved: Option<UUIDAndLink> = {
-                let z = a.links.first()?;
-                let rr = z.href.clone();
+                let z = individual_entry.links.remove(0); 
+                let rr = z.href;
 
-                Some(UUIDAndLink {uuid: id_copy2, link: rr})
+                Some(UUIDAndLink {uuid: id_copy, link: rr})
             };
             return ved;
         }).collect::<Vec<UUIDAndLink>>().await;
@@ -164,7 +167,7 @@ impl RSSTask {
         let (killsig_tx, mut killsig_rx) = sync::oneshot::channel::<()>();
         let ref_client = &self.client; // Need this to prevent client from being moved into the first map
 
-        let unseen_links = unseen_ids.iter().map(|tuple| { (tuple.uuid.clone(), tuple.link.clone()) }).collect::<Vec<(UUID,Link)>>();
+        let unseen_links = unseen_ids.into_iter().map(|tuple| { (tuple.uuid, tuple.link) }).collect::<Vec<(UUID,Link)>>();
 
         let mut status_reports: Vec<String> = vec![];
         let base_headers = headers.clone();
@@ -177,14 +180,14 @@ impl RSSTask {
                                 }
                                 _ => {
                                     let g = format!("[SCAN] Scanned [{}/{}] uniques...", hub_counter.load(Ordering::Relaxed), max_progress);
-                                    info!("{}", g.clone());
+                                    info!("{}", &g);
                                     status_reports.push(g);
                                     sleep(Duration::from_secs(3)).await;
                                 }
                             }
                         }},
                         async {
-                            let out = fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), headers).await;
+                            let out = fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers).await;
                             killsig_tx.send(()).expect("oops");
                             return out;
                         }
@@ -243,13 +246,6 @@ impl RSSTask {
 
                 unseen_ids
             };
-
-            //batch code to db
-            { 
-                
-
-                //TODO: Write the batch
-            }
             
             //visit intermediaries and extract final urls
             let intermediary_links: Vec<(UUID, Link)> = {
@@ -279,25 +275,79 @@ impl RSSTask {
                     ), false)
                 ).await?;
                 
+                
                 intermediary_links
             };
 
+            info!("[SCAN] Scanning finals");
+            self.tx_console.send(DateCommand::Print(
+                ConsoleMessage::new(
+                    "[SCAN] Scanning finals".to_string()
+                ), false)
+            ).await?;
+
             //parse through all bodies
-            {
+           let everything: Vec<(UUID, Body, RssPresence)> =  {
                 let filings_counter = Arc::new(AtomicI32::new(0));
-                let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, &headers).await?;
+                let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers).await?;
                 let everything = extract_has_split(filing_bodies).await?;
                 
-                info!("[SCAN] Extracted intermediaries");
+                everything
+            };
+
+            info!("[SCAN] Scanned finals");
+            self.tx_console.send(DateCommand::Print(
+                ConsoleMessage::new(
+                    "[SCAN] Scanned finals".to_string()
+                ), false)
+            ).await?;
+
+            info!("[SCAN] Looking for splits");
+            self.tx_console.send(DateCommand::Print(
+                ConsoleMessage::new(
+                    "[SCAN] Looking for splits".to_string()
+                ), false)
+            ).await?;
+
+            let all_filings = everything.into_iter().map(|tuple| {
+                let (uuid, body, presence) = tuple;
+                let now = Utc::now();
+                let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
                 
-                let v = everything.iter().filter(|a| { a.2 }).count();
-                
-                info!("[SCAN] potential candidates count: {}", v);
-            }
+                filing_document
+            }).collect::<Vec<FilingDocument>>();
+            
+            let candidate_filings = all_filings.iter().filter(|a| { a.is_split.0 }).collect::<Vec<&FilingDocument>>();
+            let candidate_counts = candidate_filings.len();
+
+            //TODO Whatever is happening before here is laggy as fuck
+            info!("[SCAN] Extracted split status, candidates: {}", candidate_counts);
+            self.tx_console.send(DateCommand::Print(
+                ConsoleMessage::new(
+                    format!("[SCAN] Extracted split status, candidates: {}", candidate_counts).to_string()
+                ), false)
+            ).await?;
             
             
+            stream::iter(candidate_filings).filter(|a| {
+                async {
+                    let inference = gpt_infer(&self.core.config.gpt_key, &a.body_contents, &self.client).await;
+                        
+                    true
+                }
+            });
+            
+ 
+            //let toasts = self.core.db.get_signpost("toasts".to_string()).await?;
+            //push to mongo
+
+            //self.core.db.push_filing_documents(all_filings).await?;
 
             
+
+
+
+            //update the Full Database Scanner?
 
 
 
@@ -345,13 +395,13 @@ impl RSSTask {
 
 }
 
-async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: &HeaderMap) -> Result<Vec<(UUID, Body)>> {
+async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: HeaderMap) -> Result<Vec<(UUID, Body)>> {
     let concurrency_limit = 5;
     let delay_between_requests = Duration::from_millis(50);
 
     let results = stream::iter(urls.into_iter().map(|target| {
         let g_move = counter.clone();
-        let h_move = headers.clone();
+        let h_move = headers.clone(); //well i would arc it but the api wants an owned one, so clone it is ._.
         async move {
             let response = c.get(target.1).headers(h_move).send().await?;
             let body = response.text().await?;
@@ -368,15 +418,16 @@ async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<Atomi
     Ok(results.into_iter().filter_map(|i: anyhow::Result<_>| {i.ok()}).collect::<Vec<_>>())
 }
 
-async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, bool)>> {
+async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, RssPresence)>> {
 
     let contents = tokio::task::spawn_blocking(move || {
         let detector = Arc::new(RSSPhaseOneDetector::new());
         
         let extracted = bodies.into_par_iter().map(|body| {
-            let ae = detector.detect_rss_potential(&*body.1);
+            let filtered_body = extract_all_text(body.1);
+            let ae = detector.detect_rss_potential(filtered_body.as_str());
             
-            return (body.0, body.1, ae)
+            return (body.0, filtered_body, ae)
         }).collect::<Vec<_>>();
         
         extracted
@@ -386,10 +437,10 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
 }
 
 async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> {
-    let table_selector = Selector::parse("table").unwrap();
-    let row_selector = Selector::parse("tr").unwrap();
-    let cell_selector = Selector::parse("td").unwrap();
-    let link_selector = Selector::parse("a").unwrap();
+    let table_selector = Arc::new(Selector::parse("table").unwrap());
+    let row_selector = Arc::new(Selector::parse("tr").unwrap());
+    let cell_selector = Arc::new(Selector::parse("td").unwrap());
+    let link_selector = Arc::new(Selector::parse("a").unwrap());
 
     let results= stream::iter(bodies)
         .map(|body| {
@@ -479,35 +530,6 @@ async fn process_body(
     Ok(found_link.unwrap())
 }
 
-
-
-
-//lol lmao
-async fn query_chatgpt(document_text: &str, client: &Client) -> anyhow::Result<String> {
-    let api_key = std::env::var("OPENAI_API_KEY")?;
-    let request_body = json!({
-        "model": "gpt-4o-mini",
-        "messages": [
-            { "role": "system", "content": "You are an expert financial analyst." },
-            { "role": "user", "content": format!(
-                "Please read the following document and provide an analysis on whether the company plans to round up fractional shares in a reverse stock split. Then, classify the plan using one of the following categories: ROUND_UP, ROUND_DOWN, CASH, NOT_SPLIT, OTHER. \n\nOutput the analysis and classification in JSON format.\n\nDocument:\n{}", document_text)
-            }
-        ]
-    });
-    let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&request_body)
-        .send()
-        .await?;
-    let response_json: serde_json::Value = response.json().await?;
-    let chatgpt_response = response_json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    Ok(chatgpt_response)
-}
-
 fn generate_domain_from_name(company_name: &str) -> String {
     company_name
         .to_lowercase()               // Convert to lowercase
@@ -537,4 +559,22 @@ fn generate_company_name_and_email() -> (String, String) {
     let email = format!("admin@{}.com", domain_name);
 
     (company_name, email)
+}
+
+
+fn extract_all_text(html: String) -> String {
+    let document = Html::parse_fragment(&html);
+    let mut result = String::new();
+
+    for node in document.tree {
+        if let Some(text) = node.as_text() {
+            let trimmed_text = text.trim();
+            if !trimmed_text.is_empty() {
+                result.push_str(trimmed_text);
+                result.push(' ');
+            }
+        }
+    }
+
+    result.trim().to_string()
 }

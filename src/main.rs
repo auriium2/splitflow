@@ -1,30 +1,33 @@
 #![warn(clippy::str_to_string)]
 
+#[macro_use] 
+extern crate log;
+extern crate pretty_env_logger;
+use chrono::{DateTime, Utc};
 use std::error::Error;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use chrono::{DateTime, Utc};
 
-use clokwerk::{AsyncScheduler, Job, Scheduler, TimeUnits};
-use clokwerk::Interval::Wednesday;
 use clokwerk::timeprovider::ChronoTimeProvider;
+use clokwerk::Interval::Wednesday;
+use clokwerk::{AsyncScheduler, Job, Scheduler, TimeUnits};
 use poise::{serenity_prelude as serenity, Framework};
+use rand::random;
 use serenity::all::{EventHandler, GuildId, RatelimitInfo};
 use serenity::async_trait;
 use tokio::join;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
-use rand::random;
 
-use crate::billboard::{console, deploy, perfmon, NEUTRAL_CONSOLE_BB, RSS_CONSOLE_BB};
 use crate::billboard::console::{Console, ConsoleCommand, ConsoleMessage, DateCommand};
 use crate::billboard::perfmon::*;
-use core::Core;
+use crate::billboard::{console, deploy, perfmon, NEUTRAL_CONSOLE_BB, RSS_CONSOLE_BB};
 use crate::logging::ConsoleLogger;
 use crate::scrape::RSSCommand;
+use core::Core;
 
 mod billboard;
 mod scrape;
@@ -32,16 +35,14 @@ mod buysell;
 mod logging;
 mod core;
 
-extern crate pretty_env_logger;
-#[macro_use] 
-extern crate log;
-
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::try_init_timed()?;
+
 
     //TODO cronguy: schedule all the repeating tasks here, then move to a separate thread and give that thread a async recv channel
 
-    console_subscriber::init();
+    //console_subscriber::init();
     
     //setup log forwarding
     /*let console_rx = {
@@ -52,7 +53,6 @@ async fn main() -> anyhow::Result<()> {
         rx
     };*/
     
-   pretty_env_logger::init();
 
     
 
@@ -172,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
     
     //run perfmon daemon
     tokio::spawn(async {
-        task_perfmon(perfmon_core, perfmon_client, perfmon_rx).await;
+        task_perfmon(perfmon_core, perfmon_client, perfmon_rx).await.expect("TODO: panic message");
     });
 
     //run rss daemon

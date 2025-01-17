@@ -11,8 +11,8 @@ use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbe
 use tokio::sync::mpsc::Receiver;
 
 use crate::billboard::BillboardLocation;
-use crate::core::Core;
 use crate::core::database::SignpostDocument;
+use crate::core::Core;
 
 // TODO: this code needs to be rewritten to not use pngs for displaying text, lol
 pub const IMAGE_NAME: &str = "console.png";
@@ -61,7 +61,7 @@ impl Console<DateTime<Utc>> {
                             generate_edit(&self.ctx, self.name, false, frend, contents, old_channel).await;
 
                         if let Err(why) = edit {
-                            eprintln!("Error sending message: {why:?}");
+                            error!("[CONSOLE] Error sending message: {why:?}");
                         };
                     }
                 }
@@ -112,7 +112,7 @@ impl Console<u8> {
                             generate_edit(&ctx, self.name, false, frend, contents, old_channel).await;
 
                         if let Err(why) = edit {
-                            eprintln!("Error sending message: {why:?}");
+                            error!("Error sending message: {why:?}");
                         };
                     }
                 }
@@ -154,10 +154,67 @@ async fn generate_edit<'a>(
 
             msg
         })
-        .await?;
+        .await;
     Ok(())
 }
 
+
+fn generate_indented_embed<T: Ord + Copy>(
+    messages: &[ConsoleMessage<T>],
+    prefix: &str,
+    is_root: bool,
+) -> String {
+    let mut result = String::new();
+    let mut iter = messages.iter().peekable();
+
+    while let Some(msg) = iter.next() {
+        let has_more = iter.peek().is_some();
+        let indentation = if is_root {
+            ""
+        } else if has_more {
+            " ├── "
+        } else {
+            " └── "
+        };
+
+        result.push_str(&format!("{}{}{}\n", prefix, indentation, msg.message));
+
+        if !msg.children.is_empty() {
+            let child_prefix = if is_root {
+                format!("{}│   ", prefix)
+            } else if has_more {
+                format!("{}│   ", prefix)
+            } else {
+                format!("{}    ", prefix)
+            };
+            result.push_str(&generate_indented_embed(&msg.children, &child_prefix, false));
+        }
+    }
+
+    result
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_indented_embed() {
+        // Create a hierarchy of ConsoleMessages
+        let child1 = ConsoleMessage::new_full("Child 1", vec![], 1);
+        let child2 = ConsoleMessage::new_full("Child 2", vec![], 2);
+        let grandchild = ConsoleMessage::new_full("Grandchild of Child 3", vec![], 3);
+        let child3 = ConsoleMessage::new_full("Child 3", vec![grandchild], 1);
+
+        let messages = vec![child1, child2, child3];
+
+        // Generate the indented embed
+        let result = generate_indented_embed(&messages, "", true);
+
+        println!("{}", result);
+    }
+}
 
 fn generate_console_embed(online: bool, name: &str) -> CreateEmbed {
     let c = if online {
