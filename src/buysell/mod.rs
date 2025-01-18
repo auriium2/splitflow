@@ -1,6 +1,12 @@
+mod robinhood;
+
+use tokio::sync::mpsc::Receiver;
+
+type Ticker = String;
+
 pub enum BuysellCommand {
-    Buy(String),
-    Sell(String),
+    Buy(Ticker),
+    Sell(Ticker),
     Die
 }
 
@@ -8,11 +14,13 @@ trait MarketAccount {
     
     async fn check_ticker_present() -> bool;
     
-    async fn buy();
-    async fn sell();
+    async fn buy(ticker: &str);
+    async fn sell(ticker: &str);
 }
 
-pub struct BuySellTask {}
+pub struct BuySellTask {
+    rx: Receiver<BuysellCommand>
+}
 
 impl BuySellTask {
     pub async fn run() {
@@ -28,20 +36,3 @@ impl BuySellTask {
     }
 }
 
-struct Robinhood {
-    
-}
-
-impl MarketAccount for Robinhood {
-    async fn check_ticker_present() -> bool {
-        todo!()
-    }
-
-    async fn buy() {
-        todo!()
-    }
-
-    async fn sell() {
-        todo!()
-    }
-}

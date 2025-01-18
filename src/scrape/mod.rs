@@ -68,7 +68,7 @@ pub struct RSSTask {
     client: Client,
     core: Arc<Core>,
     rx: Receiver<RSSCommand>,
-    tx_console: Sender<DateCommand>
+    tx: Sender<BuysellCommand>
 }
 
 struct UUIDAndLink {
@@ -77,29 +77,14 @@ struct UUIDAndLink {
 }
 
 impl RSSTask {
-    pub fn new(core: Arc<Core>, rx: Receiver<RSSCommand>, tx_console: Sender<DateCommand>) -> Result<Self> {
+    pub fn new(core: Arc<Core>, rx: Receiver<RSSCommand>, tx: Sender<BuysellCommand>) -> Result<Self> {
         let client = Client::builder()
             .proxy(Proxy::https("socks5://p.webshare.io:80")?.basic_auth(core.config.proxy_user.as_str(), core.config.proxy_pass.as_str()))
             .build()?;
 
-        Ok(Self { client, core, rx, tx_console})
+        Ok(Self { client, core, rx, tx})
     }
     
-    async fn log(&self, msg: &str) -> Result<()> {
-        info!("{}", msg);
-        self.tx_console.send(DateCommand::Print(
-            ConsoleMessage::new(
-                msg.to_string()
-            ), false)
-        ).await?;
-        
-        Ok(())
-    }
-
-    fn reset_day() {
-
-    }
-
     #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
         let mut headers = HeaderMap::new();
@@ -118,10 +103,10 @@ impl RSSTask {
         Ok((body6k, body8k, status6k, status8k, headers))
     }
 
+
     #[instrument(skip(self, body6k, body8k))]
     async fn merge_feeds_and_collect(&self, body6k: String, body8k: String) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
-        //TODO: cloning the 8-k body and generally any of the html bodies around is very expensive
-        
+
         //read the main feeds
         let (feed6k,feed8k) = (parser::parse(body6k.as_bytes())?, parser::parse(body8k.as_bytes())?);
         let (size6k,size8k) = (feed6k.entries.len(), feed8k.entries.len());
@@ -139,7 +124,7 @@ impl RSSTask {
             if out.is_err() { return None; }
             if out.unwrap().is_some() { return None; }
             let ved: Option<UUIDAndLink> = {
-                let z = individual_entry.links.remove(0); 
+                let z = individual_entry.links.remove(0);
                 let rr = z.href;
 
                 Some(UUIDAndLink {uuid: id_copy, link: rr})
@@ -170,7 +155,7 @@ impl RSSTask {
                                     break;
                                 }
                                 _ => {
-                                    let g = format!("[SCAN] Scanned [{}/{}] uniques...", hub_counter.load(Ordering::Relaxed), max_progress);
+                                    let g = format!("scanned [{}/{}] uniques...", hub_counter.load(Ordering::Relaxed), max_progress);
                                     info!("{}", &g);
                                     status_reports.push(g);
                                     sleep(Duration::from_secs(3)).await;
@@ -184,14 +169,7 @@ impl RSSTask {
                         }
                     ).1?;
 
-        info!("[SCAN] Visited [{}/{}] unique entries...", hub_counter.load(Ordering::Relaxed), max_progress);
-        self.tx_console.send(DateCommand::Print(
-            ConsoleMessage::new_children(
-                format!("[SCAN] [{}/{}] uniques visited", hub_counter.load(Ordering::Relaxed), max_progress).to_string(),
-                status_reports
-            ), false)
-        ).await?;
-
+        info!("visited [{}/{}] unique entries...", hub_counter.load(Ordering::Relaxed), max_progress);
         Ok(hub_bodies)
     }
     
@@ -199,27 +177,29 @@ impl RSSTask {
     async fn scan(&self) -> Result<()> {
         let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
         let status = status6k.is_success() && status8k.is_success();
-        info!("found {} documents in edgar, status codes [{}] [{}]", status, status6k, status8k);
+        if !status {
+            error!("failed to pull edgar, status codes [{}] [{}]", status6k, status8k);
+        }
 
         //Merge feeds
         let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
-        info!("found [{}/{}] unique entries in edgar", unseen_ids.len(), size6k + size8k);
+        info!("found {} unique documents in edgar, status codes [{}] [{}]", unseen_ids.len(), status6k, status8k);
 
         if unseen_ids.len() == 0 {
-            trace!("no new entries found, back to sleep");
+            info!("no new entries found, back to sleep");
             
             return Ok(());
         }
 
 
-        trace!("visiting edgar intermediary pages");
+        info!("visiting edgar intermediary pages");
         let counter = Arc::new(AtomicI32::new(0));
         let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
 
-        trace!("extracting 8-k links from intermediaries:");
+        info!("extracting 8-k links from intermediaries:");
         let intermediary_links: Vec<(UUID, Link)> = extract_8k_links(intermediary_bodies).await?;
 
-        trace!("visiting 8-k pages");
+        info!("visiting 8-k pages");
         let filings_counter = Arc::new(AtomicI32::new(0));
         let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers).await?;
         let everything = extract_has_split(filing_bodies).await?;
@@ -233,19 +213,19 @@ impl RSSTask {
             filing_document
         }).collect::<Vec<FilingDocument>>();
         
-        trace!("collecting interesting documents");
+        info!("collecting interesting documents");
         let mut key_documents = all_filings.iter()
             .filter(|d| d.is_split.0)
             .map(|d| d.clone()) //todo stop being lazy
             .collect::<Vec<FilingDocument>>();
 
-        trace!("pushing filings to db");
+        info!("pushing filings to db");
         self.core.db.push_filing_documents(all_filings).await?;
 
         info!("candidate count: {}", key_documents.len());
         let mut split = 0;
 
-        trace!("running inference");
+        info!("running inference");
         let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
         
         for document in key_documents.iter_mut() {
@@ -258,25 +238,16 @@ impl RSSTask {
             document.post_inference = Some(inference_data);
         }
         
-        trace!("pushing inferred filings to db");
+        info!("pushing inferred filings to db");
         self.core.db.push_filing_documents(key_documents).await?;
         
         info!("split count: {}", split);
-        //TODO notify discord
         
 
         Ok(())
     }
 
     pub async fn run(mut self) -> Result<()>  {
-
-
-        /*      let mut billboard_jail: BillboardState = BillboardState {
-                  time_stats: TimeStats { scanned_day: 0, scanned_week: 0, scanned_month: 0, found_day: 0, found_week: 0, found_month: 0 },
-                  doing: RSSGoal::Idle,
-                  tasks: vec![],
-              };
-              */
         while let Some(command) = self.rx.recv().await {
             match command {
                 RSSCommand::RunProcess => {

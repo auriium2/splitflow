@@ -7,7 +7,7 @@ use serde_json::json;
 use tracing::instrument;
 
 static PROMPT: &str = r#"
-Please read the following document and analyze whether the company plans to round up fractional shares in a reverse stock split. Then, classify the plan using one of the following categories: RoundUp, ROUND_DOWN, CASH, NOT_SPLIT, OTHER. 
+Please read the following document and analyze whether the company plans to round up fractional shares in a reverse stock split. Then, classify the plan using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, Other. 
 
 Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information.
 
@@ -15,7 +15,7 @@ Ensure your response is a JSON object in the following format (without comments)
 {
   "reasoning": "something",
   "ticker": "something", // the company's corresponding stock ticker
-  "classification": "RoundUp",  // or one of RoundDown, Cash, Other
+  "classification": "RoundUp",  // only allows (case-sensitive) one of (RoundUp, RoundDown, Cash, NotSplit, Other)
   "ex_date": "something",  //  ISO 8601 datetime for the ex-date with UTC timezone, or null if not found
 }
 
@@ -28,7 +28,8 @@ pub enum Classification {
     RoundUp,
     RoundDown,
     Cash,
-    Other,
+    NotSplit,
+    Other
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
@@ -61,7 +62,7 @@ impl Inference for LLMInference<'_> {
         let request_body = json!({
         "model": "gpt-4o-mini",
         "messages": [
-            { "role": "system", "content": "You are a expert financial analyst" },
+            { "role": "system", "content": "You are an expert financial analyst." },
             { "role": "user", "content": PROMPT.replace("{}", document_text) }
         ]
     });
@@ -140,7 +141,7 @@ mod tests {
         let sample_json = json!({
             "reasoning": "The company did not specify a date for the split.",
             "ticker": "MSFT",
-            "classification": "Other",
+            "classification": "NotSplit",
             "ex_date": null
         });
 
@@ -148,7 +149,7 @@ mod tests {
 
         assert_eq!(deserialized.reasoning, "The company did not specify a date for the split.");
         assert_eq!(deserialized.ticker, "MSFT");
-        assert_eq!(deserialized.classification, Classification::Other);
+        assert_eq!(deserialized.classification, Classification::NotSplit);
         assert!(deserialized.ex_date.is_none());
     }
 }

@@ -105,7 +105,10 @@ impl CoreDB {
         Ok(())
     }
     
+    
 
+    //TODO batched mode, right now we get documents from the db sequentially and dont make use of batching, which is slow and bad
+    #[instrument(skip_all)]
     pub async fn get_filing_document(&self, uuid: &UUID) -> Result<Option<Arc<FilingDocument>>> {
         let cache_option = self.filing_cache.get(uuid);
         if cache_option.is_some() {
@@ -128,6 +131,7 @@ impl CoreDB {
             }
         }
     }
+    
 
     pub fn new(signpost_db: Collection<SignpostDocument>, filing_db: Collection<FilingDocument>, filing_cache: Cache<UUID, Option<Arc<FilingDocument>>>) -> Self {
         Self { signpost_db, filing_db, filing_cache }

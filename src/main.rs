@@ -34,12 +34,14 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{prelude::*, registry::Registry};
 use tracing_subscriber::{registry, EnvFilter};
+use crate::buysell::BuysellCommand;
 
 mod billboard;
 mod scrape;
 mod buysell;
 mod logging;
 mod core;
+mod schedule;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -52,8 +54,7 @@ async fn main() -> anyhow::Result<()> {
 
 
     let (chrome_layer, _guard) = ChromeLayerBuilder::new().trace_style(TraceStyle::Async).build();
-    let subscriber = registry::Registry::default()
-        .with(LevelFilter::INFO)
+    let subscriber = Registry::default()
         .with(filter)
         .with(chrome_layer)
         .with(tracing_subscriber::fmt::Layer::default().compact());
@@ -92,6 +93,9 @@ async fn main() -> anyhow::Result<()> {
     
     let (neutral_con_tx, neutral_con_rx): (Sender<DateCommand>, Receiver<DateCommand>) = mpsc::channel(50);
     let (rss_con_tx,rss_con_rx): (Sender<DateCommand>, Receiver<DateCommand>) = mpsc::channel(50);
+
+    let (b_tx,b_rx): (Sender<BuysellCommand>, Receiver<BuysellCommand>) = mpsc::channel(50);
+
 
     let main_neutral_con_tx_copy = neutral_con_tx.clone();
 
@@ -203,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
 
     //run rss daemon
     tokio::spawn(async {
-        let e = scrape::RSSTask::new(rss_core, rss_rx, rss_con_tx, ).expect("something went wrong starting rss").run().await;
+        let e = scrape::RSSTask::new(rss_core, rss_rx, b_tx).expect("something went wrong starting rss").run().await;
 
         if e.is_err() {
             error!("Error processing rss: {:?}", e.err().unwrap())
