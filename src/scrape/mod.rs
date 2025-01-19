@@ -239,9 +239,11 @@ impl RSSTask {
         }
         
         info!("pushing inferred filings to db");
-        self.core.db.push_filing_documents(key_documents).await?;
+        for document in key_documents.into_iter() {
+            self.core.db.update_filing_document(document).await?;
+        }
         
-        info!("split count: {}", split);
+        info!("real split count: {}", split);
         
 
         Ok(())

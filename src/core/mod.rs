@@ -6,6 +6,7 @@ use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 use tracing::{error, info, instrument, warn};
 
 
@@ -39,14 +40,20 @@ impl Default for StriderConfig {
     }
 }
 
+pub enum ToastCommand {
+    SendToast(String)
+}
+
 pub struct Core {
     pub is_init: AtomicBool,
     pub config: StriderConfig,
-    pub db: CoreDB
+    pub db: CoreDB,
+    
+    pub toasts: Sender<ToastCommand>
 }
 
 #[instrument]
-pub async fn load_data() -> anyhow::Result<Core> {
+pub async fn load_data(toasts: Sender<ToastCommand>) -> anyhow::Result<Core> {
     let path = confy::get_configuration_file_path(APP_NAME, "config")?;
     info!("The configuration file path is: {:#?}", path);
     let cfg: StriderConfig = confy::load(APP_NAME, None)?;
@@ -66,6 +73,7 @@ pub async fn load_data() -> anyhow::Result<Core> {
             filing_db,
             filing_cache
         ),
+        toasts,
     })
 }
 

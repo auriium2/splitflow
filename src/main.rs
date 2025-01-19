@@ -15,9 +15,6 @@ use crate::billboard::console::{Console, ConsoleCommand, ConsoleMessage, DateCom
 use crate::billboard::perfmon::*;
 use crate::billboard::{console, deploy, perfmon, NEUTRAL_CONSOLE_BB, RSS_CONSOLE_BB};
 use crate::scrape::RSSCommand;
-use clokwerk::timeprovider::ChronoTimeProvider;
-use clokwerk::Interval::Wednesday;
-use clokwerk::{AsyncJob, AsyncScheduler, Job, Scheduler, TimeUnits};
 use core::Core;
 use poise::{serenity_prelude as serenity, Framework};
 use rand::random;
@@ -27,14 +24,16 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{join, signal};
-use tokio_cron_scheduler::JobScheduler;
+use tokio_cron_scheduler::{Job, JobScheduler, SimpleJobCode};
 use tracing::{error, info, warn};
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard, TraceStyle};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{prelude::*, registry::Registry};
 use tracing_subscriber::{registry, EnvFilter};
+use venator::Venator;
 use crate::buysell::BuysellCommand;
+use crate::core::ToastCommand;
 
 mod billboard;
 mod scrape;
@@ -46,6 +45,7 @@ mod schedule;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
 
+
     let filter = EnvFilter::default()
         .add_directive("splitflow=trace".parse()?)
         .add_directive("tokio=warn".parse()?)
@@ -55,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (chrome_layer, _guard) = ChromeLayerBuilder::new().trace_style(TraceStyle::Async).build();
     let subscriber = Registry::default()
+        .with(Venator::default())
         .with(filter)
         .with(chrome_layer)
         .with(tracing_subscriber::fmt::Layer::default().compact());
@@ -83,8 +84,9 @@ async fn main() -> anyhow::Result<()> {
 
     
 
+    let (toast_tx, toast_rx) = mpsc::channel::<ToastCommand>(10);
 
-    let core = Arc::new(core::load_data().await?);
+    let core = Arc::new(core::load_data(toast_tx).await?);
     let (start_tx, mut start_rx) = mpsc::channel(1);
 
     //MESSAGES AND SCHEDULING
@@ -100,6 +102,19 @@ async fn main() -> anyhow::Result<()> {
     let main_neutral_con_tx_copy = neutral_con_tx.clone();
 
     let mut scheduler = JobScheduler::new().await?;
+    
+    let v: SimpleJobCode = SimpleJobCode::default();
+    
+    
+    scheduler.add(
+        Job::new("1/10 * * * * *", |_uuid, _l| {
+            info!(u);
+            
+            println!("I run every 10 seconds");
+        })?
+    ).await?;
+    
+    scheduler.shutdown_on_ctrl_c();
 
     
     async fn heartbeat_billboard(perfmon_tx: Sender<PerfmonCommand>, console_tx: Sender<DateCommand>, rss_tx: Sender<DateCommand>) -> () {
@@ -216,7 +231,6 @@ async fn main() -> anyhow::Result<()> {
         return
     });
 
-    main_neutral_con_tx_copy.send(ConsoleCommand::Print(ConsoleMessage::new_str("[INFO] Systems ok!"), false)).await?;
     info!("Systems ok!");
 
     tokio::select! {

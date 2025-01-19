@@ -16,7 +16,6 @@ sys-info = "0.9.1"
 image = "0.25.5"
 imageproc = "0.25.0"
 ab_glyph = "0.2.29"
-clokwerk = "0.4.0"
 circular-buffer = "0.1.9"
 anyhow = "1.0.95"
 pretty_env_logger = "0.5.0"
@@ -33,11 +32,13 @@ regex = "1.11.1"
 mongodb = "3.1.1"
 bson = { version = "2.13.0", features = ["chrono-0_4"] }
 quick_cache = "0.6.9"
-tokio-cron-scheduler = "0.13.0"
+tokio-cron-scheduler = { version = "0.13.0", features = ["signal"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.18"
 tracing-timing = "0.6.0"
 tracing-chrome = "0.7.2"
+venator = "1.0.0"
+pyo3 = "0.23.4"
 
 
 [build]
@@ -50,3 +51,9 @@ codegen-units = 1      # Forces a single codegen unit to improve optimization (a
 debug = false          # Disable debug information for better performance
 panic = "abort"        # Use `abort` to avoid stack unwinding, reducing binary overhead
 #incremental = false    # Disable incremental compilation for consistent, fully optimized builds
+
+[alias]
+# Build the release binary
+build-remote = "build --release"
+deploy = "!cargo build --release && scp target/release/your_binary user@remote-machine:/path/to/deploy"
+run-remote = "!cargo deploy && ssh user@remote-machine 'cd /path/to/deploy && ./your_binary'"

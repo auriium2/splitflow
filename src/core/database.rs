@@ -7,6 +7,7 @@ use mongodb::Collection;
 use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use mongodb::options::ReplaceOptions;
 use tracing::instrument;
 
 #[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
@@ -94,13 +95,25 @@ impl CoreDB {
         // Batch insert documents into MongoDB
         let documents_to_insert: Vec<_> = filings.iter().cloned().collect();
         self.filing_db.insert_many(documents_to_insert).await?;
-
         // Update the cache in batches
         for filing in filings {
             let doc_uuid = filing.uuid.clone();
             let reference = Arc::new(filing);
             self.filing_cache.insert(doc_uuid, Some(reference));
         }
+
+        Ok(())
+    }
+
+    pub async fn update_filing_document(&self, filing: FilingDocument) -> Result<()> {
+        let query = doc! { "uuid": &filing.uuid };
+     
+        self.filing_db
+            .replace_one(query, filing.clone()).await?;
+        
+        // Update the cache
+        let reference = Arc::new(filing);
+        self.filing_cache.insert(reference.uuid.clone(), Some(reference.clone()));
 
         Ok(())
     }

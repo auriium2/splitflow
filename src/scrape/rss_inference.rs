@@ -7,9 +7,9 @@ use serde_json::json;
 use tracing::instrument;
 
 static PROMPT: &str = r#"
-Please read the following document and analyze whether the company plans to round up fractional shares in a reverse stock split. Then, classify the plan using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, Other. 
+Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, Other. 
 
-Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information.
+Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information. Cite your sources in the document in your reasoning.
 
 Ensure your response is a JSON object in the following format (without comments):
 {

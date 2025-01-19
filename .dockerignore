@@ -1,0 +1,28 @@
+
+# Ignore target directory (Rust build artifacts)
+target/
+
+*.rs.bk
+*.swp
+*.tmp
+*.bak
+
+.idea/
+.vscode/
+*.iml
+
+# Ignore macOS-specific files
+.DS_Store
+
+# Ignore logs
+*.log
+
+# Ignore any node_modules (in case included for some JavaScript tooling)
+node_modules/
+
+# Ignore compiled Python files (if Python bindings exist)
+*.pyc
+__pycache__/
+
+# Ignore sensitive files (if applicable)
+.env
