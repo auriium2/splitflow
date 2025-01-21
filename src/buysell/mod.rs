@@ -1,27 +1,41 @@
-mod robinhood;
+mod python;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 type Ticker = String;
 
 #[derive(Serialize, Deserialize)]
 pub struct BuyTask {
+    ticker: String
+}
+
+pub struct BuyService {
+    purchasers: Vec<Box<dyn Purchaser>>
+}
+
+#[derive(Debug, Error)]
+enum BuyServiceError {
     
+    #[error(transparent)]
+    GenericError(#[from] anyhow::Error)
 }
 
+#[async_trait]
+trait Purchaser {
+    async fn check_ticker_present(&self) -> bool;
 
-
-trait MarketAccount {
-    async fn check_ticker_present() -> bool;
-
-    async fn buy(ticker: &str);
-    async fn sell(ticker: &str);
+    async fn buy(&self, ticker: &str) -> anyhow::Result<()>;
 }
 
-impl BuyTask {
-    pub async fn run() {}
-
-    fn buy() {}
-
-    fn sell() {}
+impl BuyService {
+    async fn buy(&self, ticker: &str) -> Result<(),BuyServiceError> {
+        for x in &self.purchasers {
+            x.buy(ticker).await?;
+        }
+        
+        Ok(())
+    }
 }
+

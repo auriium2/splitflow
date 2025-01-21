@@ -30,7 +30,7 @@ use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
 use crate::billboard::perfmon::{PerfmonError, PerfmonTask};
-use crate::buysell::{BuyTask, BuysellCommand};
+use crate::buysell::BuyTask;
 use crate::core::database::FilingDocument;
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
