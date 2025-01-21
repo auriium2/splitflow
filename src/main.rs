@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .enable_tracing()
         .data(core.clone())
         .data(client.http.clone())
-        .backend(CronStream::new(Schedule::from_str("1/8 * * * * *")?))
+        .backend(CronStream::new(Schedule::from_str("1/7 * * * * *")?))
         .build_fn(run_perfmon);
 
     //rss scraper
@@ -101,7 +101,6 @@ async fn main() -> anyhow::Result<()> {
         .rate_limit(1, Duration::from_secs(10))
         .data(core.clone())
         .data(client.http.clone())
-
         .backend(CronStream::new(Schedule::from_str("1/1 * * * * *")?))
         .build_fn(run_rss);
 
@@ -112,20 +111,22 @@ async fn main() -> anyhow::Result<()> {
     let monitor_future = Monitor::new()
         .register(rss_worker)
         .register(perfmon_worker)
-        .shutdown_timeout(Duration::from_secs(3))
+        .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
 
 
     info!("assembled workers..");
 
-    tokio::select! {
+    let jz = tokio::select! {
         _ = discord_future => {
             info!("Application tasks completed.");
         }
         _ = monitor_future => {
             info!("Received Ctrl+C, shutting down...");
         }
-    }
+    };
+    
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     info!("Shutting down...");
     Ok(())

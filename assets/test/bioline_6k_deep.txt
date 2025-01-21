@@ -1,0 +1,950 @@
+<SEC-DOCUMENT>0001178913-25-000145.txt : 20250117
+<SEC-HEADER>0001178913-25-000145.hdr.sgml : 20250117
+<ACCEPTANCE-DATETIME>20250117070946
+ACCESSION NUMBER:		0001178913-25-000145
+CONFORMED SUBMISSION TYPE:	6-K
+PUBLIC DOCUMENT COUNT:		3
+CONFORMED PERIOD OF REPORT:	20250117
+FILED AS OF DATE:		20250117
+DATE AS OF CHANGE:		20250117
+
+FILER:
+
+	COMPANY DATA:
+		COMPANY CONFORMED NAME:			BioLineRx Ltd.
+		CENTRAL INDEX KEY:			0001498403
+		STANDARD INDUSTRIAL CLASSIFICATION:	PHARMACEUTICAL PREPARATIONS [2834]
+		ORGANIZATION NAME:           	03 Life Sciences
+		IRS NUMBER:				000000000
+		STATE OF INCORPORATION:			L3
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		6-K
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-35223
+		FILM NUMBER:		25536999
+
+	BUSINESS ADDRESS:
+		STREET 1:		2 HAMA-AYAN STREET
+		STREET 2:		MODI-IN TECHNOLOGY PARK
+		CITY:			MODI-IN
+		STATE:			L3
+		ZIP:			7177871
+		BUSINESS PHONE:		972-2-548-9100
+
+	MAIL ADDRESS:
+		STREET 1:		2 HAMA-AYAN STREET
+		STREET 2:		MODI-IN TECHNOLOGY PARK
+		CITY:			MODI-IN
+		STATE:			L3
+		ZIP:			7177871
+
+	FORMER COMPANY:
+		FORMER CONFORMED NAME:	BioLineRX, Ltd.
+		DATE OF NAME CHANGE:	20100805
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>6-K
+<SEQUENCE>1
+<FILENAME>zk2532569.htm
+<DESCRIPTION>6-K
+<TEXT>
+<html>
+  <head>
+    <title></title>
+    <!-- Licensed to: company
+         Document created using Broadridge PROfile 24.12.1.5274
+         Copyright 1995 - 2025 Broadridge -->
+  </head>
+<body bgcolor="#ffffff" style="font-family: 'Times New Roman', Times, serif; font-size: 10pt; text-align: left; color: #000000;">
+  <hr align="center" style="border: none; border-bottom: 1px solid black; border-top: 4px solid black; height: 10px; color: #ffffff; background-color: #ffffff; text-align: center; margin-left: auto; margin-right: auto;">
+  <div>
+    <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+    </div>
+    <div style="text-align: center; line-height: 1.25; font-family: 'Times New Roman',Times,serif; font-size: 14pt; font-weight: bold;">SECURITIES AND EXCHANGE COMMISSION</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">WASHINGTON, D.C. 20549</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-family: 'Times New Roman',Times,serif; font-size: 14pt; font-weight: bold;">FORM 6-K</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">REPORT OF FOREIGN PRIVATE ISSUER</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">PURSUANT TO RULE 13a-16 OR 15d-16 OF</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">THE SECURITIES EXCHANGE ACT OF 1934</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-style: italic; font-weight: bold;">For the month of January 2025</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25;">Commission file number: 001-35223</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-family: 'Times New Roman',Times,serif; font-size: 16pt; font-weight: bold;">BioLineRx Ltd.</div>
+    <div style="text-align: center; line-height: 1.25;">(Translation of registrant&#8217;s name into English)</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">2 HaMa&#8217;ayan Street</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">Modi&#8217;in 7177871, Israel</div>
+    <div style="text-align: center; line-height: 1.25;">(Address of Principal Executive Offices)</div>
+    <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+    </div>
+    <div style="line-height: 1.25;">Indicate by check mark whether the registrant files or will file annual reports under cover of Form 20-F or Form 40-F:</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="text-align: center; line-height: 1.25; font-weight: bold;">Form 20-F&#160;<font style="font-family: 'Segoe UI Symbol', sans-serif;">&#9746;</font>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; Form 40-F&#160;<font style="font-family: 'Segoe UI Symbol', sans-serif;">&#9744;</font></div>
+    <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+    </div>
+    <div style="clear: both; margin-top: 10pt; margin-bottom: 10pt;" class="BRPFPageBreakArea">
+      <div style="page-break-after: always;" class="BRPFPageBreak">
+        <hr noshade="noshade" style="border-width: 0px; clear: both; margin: 4px 0px; width: 100%; height: 2px; color: #000000; background-color: #000000;"></div>
+    </div>
+    <div style="text-align: justify; line-height: 1.25;">On January 17, 2025, the Registrant issued the press release which is filed as&#160;<a href="exhibit_1.htm">Exhibit 1</a>&#160;to this Report on Form 6-K.</div>
+    <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+    </div>
+    <div style="text-align: justify; line-height: 1.25;">The first two paragraphs of the press release attached to
+        this Form 6-K as&#160;Exhibit 1&#160;are hereby incorporated by reference into all effective registration statements filed by the registrant under the Securities Act of 1933.</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="clear: both; margin-top: 10pt; margin-bottom: 10pt;" class="BRPFPageBreakArea">
+      <div style="page-break-after: always;" class="BRPFPageBreak">
+        <hr noshade="noshade" style="border-width: 0px; clear: both; margin: 4px 0px; width: 100%; height: 2px; color: #000000; background-color: #000000;"></div>
+    </div>
+    <div style="line-height: 1.25;">Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf
+      by the undersigned, thereunto duly authorized.</div>
+    <div style="line-height: 1.25;">&#160;</div>
+    <table cellspacing="0" cellpadding="0" id="zf5dd34f21bb04f3e85e4934e1dcb2dc1" style="font-family: 'Times New Roman', Times, serif; font-size: 10pt; width: 100%; text-align: left; color: #000000;">
+
+        <tr>
+          <td style="width: 49.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 34.13%; vertical-align: bottom;" colspan="2">
+            <div style="line-height: 1.25; font-weight: bold;">BioLineRx Ltd.</div>
+          </td>
+          <td style="width: 15.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 49.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 3.2%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 30.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 15.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 49.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 3.2%; vertical-align: top;">
+            <div style="line-height: 1.25;">By:</div>
+          </td>
+          <td nowrap="nowrap" style="width: 30.93%; vertical-align: top; border-bottom: #000000 2px solid;">
+            <div style="line-height: 1.25;">/s/ Philip A. Serlin</div>
+          </td>
+          <td style="width: 15.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 49.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 3.2%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td nowrap="nowrap" style="width: 30.93%; vertical-align: bottom;">
+            <div style="line-height: 1.25;">Philip A. Serlin</div>
+          </td>
+          <td style="width: 15.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 49.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td style="width: 3.2%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+          <td nowrap="nowrap" style="width: 30.93%; vertical-align: bottom;">
+            <div style="line-height: 1.25;">Chief Executive Officer</div>
+          </td>
+          <td style="width: 15.93%; vertical-align: top;">
+            <div style="line-height: 1.25;">&#160;</div>
+          </td>
+        </tr>
+
+    </table>
+    <div style="line-height: 1.25;">&#160;</div>
+    <div style="line-height: 1.25;">Dated: January 17, 2025</div>
+    <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+    </div>
+    <div style="line-height: 1.25;">
+      <hr align="center" style="border: none; border-bottom: 4px solid black; border-top: 1px solid black; height: 10px; color: #ffffff; background-color: #ffffff; text-align: center; margin-left: auto; margin-right: auto;"></div>
+  </div>
+</body>
+</html>
+</TEXT>
+</DOCUMENT>
+<DOCUMENT>
+<TYPE>EX-99
+<SEQUENCE>2
+<FILENAME>exhibit_1.htm
+<DESCRIPTION>BIOLINERX ANNOUNCES CHANGE TO RATIO OF AMERICAN DEPOSITARY SHARES TO ORDINARY SHARES
+<TEXT>
+<html>
+  <head>
+    <title></title>
+    <!-- Licensed to: company
+         Document created using Broadridge PROfile 24.12.1.5274
+         Copyright 1995 - 2025 Broadridge -->
+  </head>
+<body bgcolor="#ffffff" style="font-family: 'Times New Roman', Times, serif; font-size: 10pt; text-align: left; color: #000000;">
+  <div>
+    <hr align="center" style="border: none; border-bottom: 1px solid black; border-top: 4px solid black; height: 10px; color: #ffffff; background-color: #ffffff; text-align: center; margin-left: auto; margin-right: auto;">
+    <div>
+      <div class="BRPFPageHeader">
+        <div style="line-height: 1.25; font-weight: bold; text-align: right;">Exhibit 1</div>
+        <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+        </div>
+      </div>
+      <div style="text-align: justify; line-height: 1.25;"><img width="164" height="38" src="image0.jpg"></div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="line-height: 1.25; font-weight: bold;">For Immediate Release</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: center; line-height: 1.25; font-family: 'Times New Roman',Times,serif; font-size: 14pt; font-weight: bold;">BioLineRx Announces Change to Ratio of American</div>
+      <div style="text-align: center; line-height: 1.25; font-family: 'Times New Roman',Times,serif; font-size: 14pt; font-weight: bold;">Depositary Shares to Ordinary Shares</div>
+      <div style="text-align: center; line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">Tel Aviv, Israel, January 17, 2025 &#8211; BioLineRx Ltd. (NASDAQ/TASE: BLRX), a clinical-stage biopharmaceutical company pursuing
+        life-changing therapies in oncology and rare diseases, announced today that its Board of Directors has approved a change in the number of its ordinary shares represented by American Depositary Shares, issued by the Bank of New York Mellon as
+        depositary, from 15 ordinary shares per ADS to 600 ordinary shares per ADS. The change in exchange ratio for the ADSs will have the same effect as a 1-for-40 reverse stock split of the ADSs, reducing the number of outstanding ADSs from 142,340,133
+        to 3,558,503 ADSs. The ADSs will continue to trade on the Nasdaq Capital Market. BioLineRx&#8217;s ordinary shares, which are not affected by the change, will continue to trade on the Tel Aviv Stock Exchange.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">The new ADS to ordinary share ratio of 1 for 600 will be effective prior to the commencement of trading on the Nasdaq Capital Market
+        on Thursday, January 30, 2025.&#160;Because each ADS will represent 40 times the current number of BioLineRx&#8217;s ordinary shares represented by ADSs and the total number
+        of ordinary shares remains the same, the trading price of the ADSs is expected to increase by the same multiple after the ratio change, enhancing the suitability of the ADSs for trading on the Nasdaq Capital Market. BioLineRx can give no assurance,
+        however, that the ADS price after the change in the ADS ratio will be equal to or greater than 40 times the ADS price before the change.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">&#8220;Following the exclusive out-licensing transaction with Ayrmid Ltd. that we announced in November, and the financing that we completed
+        earlier this month, we are well capitalized with $29.5 million of cash, providing a cash runway through the second half of 2026 based on our current plans. Our projected annual operating burn of approximately $12 million is expected to fund the
+        ongoing development of motixafortide in pancreatic cancer under our existing collaborations, as well as costs associated with pipeline expansion activities, and excludes any potential revenue generated from sales royalties or commercial milestones
+        under our out-licensing agreements,&#8221; stated Philip Serlin, Chief Executive Officer of BioLineRx. &#8220;As we continue to execute on our long-term strategy, which includes the potential in-licensing of new assets, maintaining our Nasdaq exchange listing
+        will be critical. This ratio change is designed to address the Nasdaq&#8217;s low priced stock rule, and, when effective, is expected to bring us back into compliance with all applicable Nasdaq listing standards and ensure that we continue to enjoy all
+        the benefits that such a listing confers.&#8221;</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="clear: both; margin-top: 10pt; margin-bottom: 10pt;" class="BRPFPageBreakArea">
+        <div style="page-break-after: always;" class="BRPFPageBreak">
+          <hr noshade="noshade" style="border-width: 0px; clear: both; margin: 4px 0px; width: 100%; height: 2px; color: #000000; background-color: #000000;"></div>
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">Holders of BioLineRx&#8217;s ordinary shares, which are traded on the Tel Aviv Stock Exchange (TASE: BLRX), are unaffected by the new
+        exchange ratio for ADSs. The Company&#8217;s total outstanding share capital at present is 2,135,101,990 ordinary shares.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">No fractional ADSs will be issued. Holders who would otherwise receive fractional ADSs will receive a cash payment in lieu of such
+        fractional ADSs. The cash in lieu rate will be set when the depositary sells the ADSs that would otherwise have been issued as fractional ADSs in one or more market trades.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">ADS holders with ADSs held in book-entry form or through a bank, broker or other nominee are not required to take any action and will
+        see the impact of the change to the ADS ratio reflected in their accounts after January 30, 2025. Beneficial holders may contact their bank, broker or nominee for more information. ADS holders with ADSs held in certificate form may exchange their
+        certificates for book-entry ADSs resulting from the changed ADS ratio. Shortly after January 30, 2025, such ADS holders will receive a Letter of Transmittal and instructions for exchanging their certificates from the depositary.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25; font-weight: bold;">About BioLineRx</div>
+      <div style="text-align: justify; line-height: 1.25;">BioLineRx Ltd. (NASDAQ/TASE: BLRX) is a clinical-stage biopharmaceutical company pursuing life-changing therapies in oncology and rare
+        diseases. The company&#8217;s first approved product is APHEXDA&#174; (motixafortide), with an indication in the U.S. for stem cell mobilization for&#160;autologous transplantation in multiple myeloma, which is being developed and commercialized by Ayrmid Ltd.
+        (globally, excluding Asia) and Gloria Biosciences (in Asia). BioLineRx is utilizing its end-to-end expertise in development, regulatory affairs, manufacturing and commercialization to advance its innovative pipeline and ensure life-changing
+        discoveries move beyond the bench to the bedside.</div>
+      <div style="line-height: 1.25;">
+        <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+        </div>
+        <div style="text-align: justify; line-height: 1.25;">Learn more about who we are, what we do, and how we do it at&#8239;<u>www.biolinerx.com</u>, or on&#8239;<u>Twitter</u>&#8239;and&#8239;<u>LinkedIn</u>.&#8239;&#160;</div>
+      </div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="clear: both; margin-top: 10pt; margin-bottom: 10pt;" class="BRPFPageBreakArea">
+        <div style="page-break-after: always;" class="BRPFPageBreak">
+          <hr noshade="noshade" style="border-width: 0px; clear: both; margin: 4px 0px; width: 100%; height: 2px; color: #000000; background-color: #000000;"></div>
+      </div>
+      <div style="text-align: justify; line-height: 1.25; font-weight: bold;">Cautionary Note Regarding Forward-Looking Statements (BioLineRx)</div>
+      <div style="text-align: justify; line-height: 1.25; font-style: italic;">Various statements in this release concerning BioLineRx's future expectations constitute "forward-looking
+        statements" within the meaning of the Private Securities Litigation Reform Act of 1995. These statements include words such as "anticipates," "believes," "could," "estimates," "expects," "intends," "may," "plans," "potential," "predicts,"
+        "projects," "should," "will," and "would," and describe opinions about future events. These include statements regarding the expected date of the ratio change, the anticipated effect this will have on the trading price, and BioLineRx&#8217;s cash runway.
+        These forward-looking statements involve known and unknown risks, uncertainties and other factors that may cause the actual results, performance or achievements of BioLineRx to be materially different from any future results, performance or
+        achievements expressed or implied by such forward-looking statements. Factors that could cause BioLineRx&#8217;s actual results to differ materially from those expressed or implied in such forward-looking statements include, but are not limited to: the
+        initiation, timing, progress and results of BioLineRx&#8217;s preclinical studies, clinical trials, and other therapeutic candidate development efforts; BioLineRx&#8217;s ability to advance its therapeutic candidates into clinical trials or to successfully
+        complete its preclinical studies or clinical trials; whether BioLineRx&#8217;s collaboration partners will be able to execute on collaboration goals in a timely manner; whether the clinical trial results for APHEXDA will be predictive of real-world
+        results; BioLineRx&#8217;s receipt of regulatory approvals for its therapeutic candidates, and the timing of other regulatory filings and approvals; the clinical development, commercialization and market acceptance of BioLineRx&#8217;s therapeutic candidates,
+        including the degree and pace of market uptake of APHEXDA for the mobilization of hematopoietic stem cells for autologous transplantation in multiple myeloma patients; whether access to APHEXDA is achieved in a commercially viable manner and
+        whether APHEXDA receives adequate reimbursement from third-party payors; BioLineRx&#8217;s ability to establish, operationalize and maintain corporate collaborations; BioLineRx&#8217;s ability to integrate new therapeutic candidates and new personnel; the
+        interpretation of the properties and characteristics of BioLineRx&#8217;s therapeutic candidates and of the results obtained with its therapeutic candidates in preclinical studies or clinical trials; the implementation of BioLineRx&#8217;s business model and
+        strategic plans for its business and therapeutic candidates; the scope of protection BioLineRx is able to establish and maintain for intellectual property rights covering its therapeutic candidates and its ability to operate its business without
+        infringing the intellectual property rights of others; estimates of BioLineRx&#8217;s expenses, future revenues, capital requirements and its needs for and ability to access sufficient additional financing, including any unexpected costs or delays in
+        the&#160; commercial launch of APHEXDA; risks related to changes in healthcare laws, rules and regulations in the United States or elsewhere; competitive companies, technologies and BioLineRx&#8217;s industry; and statements as to the impact of the political
+        and security situation in Israel on BioLineRx&#8217;s business which may exacerbate the magnitude of the factors discussed above. These and other factors are more fully discussed in the &#8220;Risk Factors&#8221; section of BioLineRx&#8217;s most recent annual report on
+        Form 20-F filed with the Securities and Exchange Commission on March 26, 2024. In addition, any forward-looking statements represent BioLineRx&#8217;s views only as of the date of this release and should not be relied upon as representing its views as of
+        any subsequent date. BioLineRx does not assume any obligation to update any forward-looking statements unless required by law.</div>
+      <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+      </div>
+      <div style="text-align: justify; line-height: 1.25;">Contacts:</div>
+      <div style="line-height: 1.25;">
+        <div style="line-height: 1.25;"><br style="line-height: 1.25;">
+        </div>
+        <div style="text-align: justify; line-height: 1.25;"><u>United States</u></div>
+        <div style="line-height: 1.25">Irina Koffler <br>
+        </div>
+        <div style="text-align: justify; line-height: 1.25;">LifeSci Advisors, LLC</div>
+        <div style="text-align: justify; line-height: 1.25;"><u>ikoffler@lifesciadvisors.com</u></div>
+        <div style="line-height: 1.25">&#160;</div>
+        <div style="text-align: justify; line-height: 1.25;"><u>Israel</u></div>
+        <div style="text-align: justify; line-height: 1.25;">Moran Meir</div>
+      </div>
+      <div style="line-height: 1.25;">
+        <div style="text-align: justify; line-height: 1.25;">LifeSci Advisors, LLC</div>
+      </div>
+      <div style="text-align: justify; line-height: 1.25;"><u>moran@lifesciadvisors.com</u></div>
+      <div style="text-align: justify; line-height: 1.25;"><u> <br>
+        </u></div>
+      <div style="text-align: justify; line-height: 1.25;">
+        <hr align="center" style="border: none; border-bottom: 4px solid black; border-top: 1px solid black; height: 10px; color: #ffffff; background-color: #ffffff; text-align: center; margin-left: auto; margin-right: auto;"><u> </u></div>
+    </div>
+  </div>
+</body>
+</html>
+</TEXT>
+</DOCUMENT>
+<DOCUMENT>
+<TYPE>GRAPHIC
+<SEQUENCE>3
+<FILENAME>image0.jpg
+<TEXT>
+begin 644 image0.jpg
+M_]C_X  02D9)1@ ! 0$ W #<  #_VP!#  $! 0$! 0$! 0$! 0$! 0$! 0$!
+M 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0'_
+MVP!# 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0$!
+M 0$! 0$! 0$! 0$! 0$! 0$! 0$! 0'_P  1" !C :0# 2(  A$! Q$!_\0
+M'P   04! 0$! 0$           $" P0%!@<("0H+_\0 M1   @$# P($ P4%
+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
+M_P#)2X__ +$F(_\ 4[+SY+Q@_P"2;P7_ &.</_ZAXX_J\_X-5/\ E'K\8_\
+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
+MF\%_V.</_P"H>./ZO/\ @U4_Y1Z_&/\ [/+^(/\ ZI+]GFOZ9*_F:_X-5/\
+ME'M\9/\ L\OX@_\ JDOV>?\ //\ *OZ9:^2X\_Y+#/\ _L.?_IJF?5<"?\DA
+MD'_8!#_TNH?Y 'Q[_P"2Z?&G_LK/Q&_]3#6:_P!(/_@@K_RB6_9!_P"P+\5O
+M_5\_%.O\WSX]_P#)=/C3_P!E9^(W_J8:S7^D'_P05_Y1+?L@_P#8%^*W_J^?
+MBG7[=XS?\D7PU_V,,%_ZJ<4?AO@K_P EMQ9_V"8O_P!6U(_7PG')X Y)/:O\
+MO7_@L9^VQK?[;_[<?Q4\81:D9_A=\,M:U;X1?!G3;35)-1T5?!/@S6+[3I/%
+ME@5V6AN?B)J\5[XQNKB&$2BSU+2M(EN;RWT6SGK_ $H_VC_$-[X1_9X^//BO
+M3I'AU#PQ\&/BCXAL)49D>*\T7P/KFI6LB.GS(Z3VR,K+\RD CD"O\@ZO!\",
+MIP]?'YWG%6"EB,OI83"81N_[OZ]]9EB*BUMS^SP\*:=F^2I42:N[^YX_9MB<
+M/EF19/2DXX?,\1C,5B[-+VBRY818>E+W6W#VF+=5I22YZ5-M2LN7^H__ ((%
+M_P#!&[P?^U9;G]L7]J+1(]?^!GA[Q#>Z+\*_A?>$'2_BMXGT"=[77/$'C&,?
+M/<^ ?#&IJ=+M]"1T7Q7XDM-0MM89= T2\TOQ+_=MHVBZ/X<TK3]!\/Z3INA:
+M'I%I#8:5HVCV-KIFE:98VR".WL]/T^RB@M+.U@C 2&WMX8XHT 5$ &*^1?\
+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
+M_LIVG_\ J#>$:_U(*_RW_P#@MA_RE4_;1_[*=I__ *@WA&OS'P;_ .2EQ_\
+MV),1_P"IV7GZQXP?\DW@O^QSA_\ U#QQ_5Y_P:J?\H]?C'_V>5\0?7_HB7[/
+M/^>*_IDK^9O_ (-5/^4>OQC_ .SR_B#_ .J2_9YK^F2ODN//^2PS_P#[#G_Z
+M:IGU7 G_ "2&0?\ 8!#_ -+J'^0!\>_^2Z?&G_LK/Q&_]3#6:_T@_P#@@K_R
+MB6_9!_[ OQ6_]7S\4Z_S?/CW_P ET^-/_96?B-_ZF&LU_I!_\$%?^42W[(/_
+M &!?BM_ZOGXIU^W>,W_)%\-?]C#!?^JG%'X;X*_\EMQ9_P!@F+_]6U(^]/VO
+M?^33?VH/^S=_C7_ZK7Q-7^1?7^NA^U[_ ,FF_M0?]F[_ !K_ /5:^)J_R+ZY
+M_ +_ '7B;_L(RO\ ]-XXW^D+_%X3_P"O>=_^E94?ZYG['O\ R:1^RU_V;G\$
+M?_59^&*^C*^<_P!CW_DTC]EK_LW/X(_^JS\,5]&5_.6*_P!YQ'_7^K_Z<D?T
+MG0_@4?\ KU3_ /2$%%%%8&I_D&?M&?\ )PGQW_[++\3_ /U-]<K_ $6?^#?3
+M_E$5^R;_ -=/CS_ZTM\8Z_SIOVC/^3A/CO\ ]EE^)_\ ZF^N5_HM?\&^G_*(
+MK]DS_?\ CS_ZTO\ &2OZB\8W_P 8!P_YYME/_JFS-G\K>#/_ "<7B7_L59S_
+M .KW*SY-_P"#H[P'K?BC_@GKX$\6:3;F>R^&G[2W@7Q!XF;=M%GH.O>"_B-X
+M+AO<;3O;_A)O$7ANP"[D&-09\DH%/\.O[*/P6\._M&_M(_!?X"^*OB-'\)-(
+M^+_C[0_A[_PL.7PT/%\/AO5O%%Q_97AV:;P\WB#PJNH0W_B&XTO29C)XATN.
+MSCOVOY9VCM6AE_U&/V]OV7-)_;/_ &0?CK^S=JDC6]Q\1/!DR^%[Y;B2U&F^
+M/?#5]9>+?A]J4\L<D3-86?C30M#FU2V9UBOM+6\L9\P7,@/^4MJVE^-OA)\0
+M=3T35;?5?!?Q&^&7C*\TO4;4R&TUSPGXV\%ZW):7D'G6\C&VU70==TV2/S()
+M6\F[M=T<AVJU'@OF;QO"F<9)AL2L-F>!Q.)J8>IR4Y.C2S##I87%*%55(5G1
+MQE.NZD9TITTE1C.,U4Y6_&W*X8'BW(\_Q6&EB\KQ]##4<914JD%6GEN)OBL,
+MZE*=*='ZQ@JU&--PJTZCDJTZ<XN#E'^OK_B$?_ZR!_\ FJ7_ .4E1_Q"/_\
+M60/_ ,U2_P#RDJ_<#_@DE_P5 ^'7_!1'X": ^HZ_HNE?M->!-#LM.^-?PX,]
+MM9:G<:C8I#8R?$?PSI82W^V>"_%DQBU -IL4UOX7U6]E\-7[J]O876H_K97Y
+MCF7B1XFY1CL3EV89Q/#8S"594JU*IE.2)J4=I1?]FVG3J1M.E4BW"I3E&<).
+M,DW^HY;X9>%V;X'#9EEV2T\5@\92C6H5J><9XXRC);27]IWA4@[PJTY)3I5(
+MRIU(QG&27\:?_$(__P!9 _\ S5+_ /*2H_XA'_\ K('_ .:I?_E)5_997/\
+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
+MUN(,WIU)X3+:N!K5EE."^LXB=6&-KTJ=#\?XOX6S[Q!XLP'#^=8+ZEX5Y#'
+MYYFL*F)PE:IXA\04\0J^69%6PE#$5:V'X4R*="./SNAF="A+B#,9Y?@J5&IE
+M>$QTL9Z!%%'!%'##&D4,*)%%%$BI'%'&H2..-% 5$10%15 55    I]%%?F+
+M;>KU;U;?4_8#YE_:U_9?\$_M:?!W7?AAXN2*RU$J^J>"?%2VT<]_X/\ %MO!
+M(FFZO;9 D>SD+FRUJPCDB_M+29[JU$L,S07$'Q=_P3N_:H\;RZ]XL_8G_:;E
+M32_VA_@E(^DZ%?WUY)/+\1O!FF6-G+;W*ZA>2^9K&OZ?830ZI#=1HC^(?!EU
+MI?B"..:>UUV>+]:Z^"?VO?V'++]I'Q5\,_BMX$^(,_P3^./PMUBUN]$^)FF>
+M'SX@GO=&M7ENX=%U/2DUO0%N_LFHLEQ8W,]Y-'':3ZMI5U9WEEJ;I!^H<'\1
+MY-C,EQ_ /&F)>%X>QDJV8\/YZZ%;%U>#N)%25L9"CAJ5?%ULFSB%*G@L\P.&
+MI5*DE]7Q^'IK$X5^U_&^/>%.(,!Q#EGB?X>8..,XJP$,-E'%7#*Q&%P-'Q!X
+M/>(DWEU3%8VOA<#A>(N':F(KYIPMF>-KTJ$)3S#)\94C@LT=;"?>U%96A0ZS
+M;:+I-OXAO[+5->@TZSAUG4]-L)-*T_4=4BMXTOK^RTN:\U"73K:[N5DN(;![
+M^^:TCD6W-Y<^7YSZM?F,XJ,Y14HS492BIPYN2:3:4X\\83Y9;QYHQE9KFBG=
+M+]BA)RA&3A*#E&,G"?+SP;2;C+DE.'-':7+*4;I\LFK-E%%%24%%%% !1110
+M 4444 %%%% !1110 4444 %%%% !1110 4444 %?YG7_  <%?"_6/AK_ ,%5
+MOVAKW4+&YM-,^*%E\._BAX8N+B,I'JFCZSX#T'0-0OK-R L]M'XN\,>)],,B
+M9"W6G7,#'S(7Q_IBU^%G_!<3_@E+>?\ !17X/>&_&GPFDTW3OVEO@A;:W-X)
+MAU)OL]C\2/"&IQ?:]7^&5YJ$E[:66D:E<:K:V.K^$M>U)+JPT_45U/2+M+&R
+M\37FM:5]UX=Y_AN'N)*6(QLO9X/&8>KE^(K;JA&M.E5IUI+_ )]QK4*:JM:P
+MI2G/WN7EE\3X@9#B>(.':V&P4/:8S"UZ6.PU*_*ZTJ*J4ZE*+;24Y4*U5TU*
+MZE4C"'N\W/'\D/\ @UQ_;<^%'@?0OBU^Q1\0?%&D^$/&7CKXEQ?%WX0G7+J#
+M3K3QSK&M>&?#/@GQ5X/TN^NIHK>;Q3;P^$/"VH:+H*_\3'6[6YUB33H[DZ5<
+M1I_:%7^.MXM\$^.?A;XQUGP1\0/"WB?X?^//">H"RU[PMXJTC4_#7B?P_J42
+MPW*0:CI.J6]IJ.G7(BE@NH1-!&SPRP7,1:.6-V^D=&_;G_;9T6QL]*T?]L/]
+MJ;2=+L8([:RTW3?V@OBU86%G;PA8XK>UL[7Q=%;V\$4:JD<44:1HBA54* *_
+M6>)O"G_63-:N=97F]##PS!4ZU:E6I2KTW5]G"/ML/6I3UI5HJ,^5IVFY.$W"
+M480_(^'O%?\ U8RJEDF:Y-B*]3+G*A2J4:D</55)RE)4L30KPO&K1DW#FBUS
+M0Y5*FIQE.I_K,45_E%V_[>_[=)SG]M']K(_,.O[1GQ@/\_&-:T'[>?[<I&3^
+MV;^U>3SR?VB?B^?7_J<,<<=?QXKQ8> ^:SM_POY>FU_T"XGR_O>?_ /1J_2
+MRBEOP]F3],5A>U_Y3_5>HK_*WB_;P_;B)7/[9?[5IX'7]H?XNGT_ZG"M:+]N
+MO]MTD9_;'_:I/3_FX7XN'_W;L?Y],UUP^CYG$[?\9%EJO;_F$Q3W_P"WD>;5
+M^DGDE+?AK-7Z8S">7]WS/]3*BO\ +B@_;G_;:.,_MA_M3GZ_M!_%H^OKXN_&
+MM6+]N/\ ;6(7/[8'[49Y'7]H#XL'T_ZFVNN'T<LYG;_C),L5[?\ ,'BNO_;Y
+MYE3Z4N0TKWX5S=V[8W!>7]WS/]0BBO\ ,-A_;?\ VTB1G]KW]J \#K\?OBM[
+M_P#4VG_/MBM:#]MO]L\]?VNOVGCP.OQ\^*W_ ,U?^?K73#Z-&=R_YJ?*U_W)
+M8M]O[ZZ,\ZI]+;AZG_S2.<NW;'X%?^V^3/\ 3<HK_,XA_;7_ &RR!G]K?]IL
+M_7X]?%0]O^QKK8A_;3_;')3/[67[3!R>_P =_BD?7_J:JZX?1>SR>W%65+_N
+M1QGE_?\ ,\RK],CANE=/@S/&U_U,, NW>'GV/]*^BO\ -DA_;/\ VPSG/[5_
+M[2IZ]?CK\43Z?]336I!^V7^U^1S^U9^TD>._QS^)Y]/^IHKJA]%3/I?\U9E"
+MV_Y@,9W7_3SS//J_39X8I/7@?/GZ9CEWE_<\S_2'HK_./B_;&_:[.,_M4?M'
+MG.>OQP^)WK_V,]:L'[8?[6Y//[4O[1GX_&[XF>WKXF-=4/HEY_-)KB_)U>W_
+M #+\;UM_T\\SS:OTZN%:6_ ?$#?EF>6^7_3L_P!%NBO\[N#]K_\ :T.<_M1?
+MM%'GO\;/B5[\?\C,3_7T[&M2']KO]K XS^T]^T.?K\:OB2>__8RDUU0^B!Q#
+M/_FLLF6W_,NQW7_N(>;5^GYPE2W\/^(WZ9KEO>W6F?Z&%%?Y\\/[7'[5IQ_Q
+MDW^T)_#_ ,UH^(__ ,TE:L/[6G[5)QG]IC]H(\CK\9OB,>Y_ZF3_ #WKKA]#
+M;B.=O^,TR57M_P RW'=?^XIYU;]H;PA2W\.N)9?]U?*UV_Z=>9_H!T5_ E#^
+MUA^U,<9_:5^/Q^[U^,?Q$/U_YF.M$?M7?M28'_&2?Q]Z?]%B^(G_ ,T=="^A
+M=Q(_^:WR3_PV8_R?_/WS^\\V?[1_@R#L_#7B=Z_]#C*O+_IT?WN45_!)_P -
+M7?M1_P#1R?Q]_P##Q?$3_P":.C_AJ[]J/_HY/X^_^'B^(G_S1T_^)+>)/^BW
+MR3_PV8__ .6^O]/2/^*D7!G_ $;3BC_P\95_\J]?Z>G][=%?P2?\-7?M1_\
+M1R?Q]_\ #Q?$3_YHZ/\ AJ[]J/\ Z.3^/O\ X>+XB?\ S1T?\26\2?\ 1;Y)
+M_P"&S'__ "WU_IZ'_%2+@S_HVG%'_AXRK_Y5Z_T]/[VZ*_@D_P"&KOVH_P#H
+MY/X^_P#AXOB)_P#-'1_PU=^U'_T<G\??_#Q?$3_YHZ/^)+>)/^BWR3_PV8__
+M .6^O]/0_P"*D7!G_1M.*/\ P\95_P#*O7^GI_>W17\$G_#5W[4?_1R?Q]_\
+M/%\1/_FCH_X:N_:C_P"CD_C[_P"'B^(G_P T='_$EO$G_1;Y)_X;,?\ _+?7
+M^GH?\5(N#/\ HVG%'_AXRK_Y5Z_T]/[VZ*_@D_X:N_:C_P"CD_C[_P"'B^(G
+M_P T=?7W[$W_  4A^+WP*^-.G:K\8OB5\1_B=\*/%*6OA[QOI?C'Q=XB\93>
+M'[-KAFL_%_AN+7;S59[/4=!EGEGO[/2_)/B#2GN+"YCGO(-&GT_R<]^AYQCE
+M>3YCF.7\1Y3G6,P.%JXJCE5#!XS#XC'NC'GGA\-5JRG3^L3@I^PA-*-6JH4G
+M.'/SQ]_A7]H9X<Y[Q%E&39OPEG_#&7YGC:."KY_C<PR[%8'*WB)*G2Q6.IT8
+MTZL<%"K*'UJO!R>&H.>(<)QIRB?V.T5EZ)K>D>)=&TKQ#H&HVFKZ'KFGVFJZ
+M1JMA,ES9:CIM_ ES9WMK/&2DL%Q;R1RQ.I(96!HK^0IPG3G*G4C*$X2E"<)Q
+M<9PG%N,HRBTG&46FI1:33335S_0.$XU(1J4Y1G"<8SA.#4H3A)*491E%M2C)
+M-.,DVFFFG8U****DH**** "BBB@ HHHH **** "BBB@ HHHH **** "BBB@
+MHHHH ^/?VL/V'/V2OVO?#%Y:_M&? ?P)\2[NQL1_9WB6]L[O0?'>E16+-=P6
+MFD?$3PG>Z#X[TG3S.-USING>([6PO4+0WMM<0LT9_"C4_P#@CA_P3?M-0NH;
+M?]G/RXXII$1?^%O?'=]JK(P R_Q/9CCU))]3117T>3YYG6!IRP^"SC-,'03<
+ME0PN88O#T5)M7DJ=*K""D^KY;L\/,\BR3,*BKX_)LJQU?X?;8S+L)B:O*EI'
+MVE:C.=ET5[(JK_P1_P#^"=2?=_9XQSG_ )*U\<S_ #^)AJ>/_@D/_P $\%(
+M_9[P/^RL?'#MD_\ 12_6BBO=CQ5Q0KVXCSY6B[6S?,-/_+@\>?!_"4D^;A;A
+MQZ/?),L?3SPI;7_@D9_P3T7D?L^XQ_U5?XW_ -?B54P_X)*?\$^5Y'P Y_[*
+MK\;#_/XD445T1XMXK25N)N(5HMLYS+_YI.27!/!DOBX1X8E_BR#*G^>$+:?\
+M$FO^"?J@;?@%C@?\U4^-?]?B/[U.O_!*']@->GP$QC_JJ7QH_K\1J**Z*?&/
+M%R7_ "5/$>__ $.\S\O^HHPJ<!<#--O@OA-OSX<R=]5WP983_@E3^P0&&/@/
+M_P"90^,WO_U43WJTO_!*[]@Q?N_ G'_=3_C*?Y_$.BBNJ/&?&":MQ7Q*O<6V
+M>YI_\U'*_#W@&7Q<#\'R]>&<E?YX(N)_P2T_804#'P+QP/\ FIWQC/;W^(56
+MH_\ @EW^PL#Q\#>G(_XN9\8?7_LH%%%;1XVXS35N+N)UJML^S5?^[9QOPW\.
+MY?%P#P6_7A;(W^>!+*_\$P?V&E^[\#\?]U+^+Y_GX_JU'_P3'_8>51CX)8[?
+M\E)^+OK[^/J**[8<<<:_]%?Q3U_YJ#-O[O\ U%G)/PQ\-I-\WA[P/+5[\)Y"
+M_P \O+ _X)G?L1KT^"F,?]5(^+?]?'M6T_X)J?L3J 1\%L<#_FHWQ:]O^I\H
+MHKHI\=\;W_Y++BK;_HH<W\O^HPXY^%GAC)OF\.. Y:O?A#AY_GEQ;C_X)M?L
+M6#('P8]/^:B_%CW_ .IZJW'_ ,$W_P!C ' ^#7;_ **'\5O4?]3S11793X]X
+MZM_R6G%F_P#T46<=E_U&')4\)O"MR=_#/P_?KP9PX_SRTMI_P3F_8T##'P<_
+M\R%\5.PX_P"9XJVO_!.S]CA>GP>QT_YJ#\4NW3KXWHHKKI>(''FG_&;<7?$O
+M^:DSGR_ZC3CJ>$/A-)M2\+_#MK3?@GAI]%WRPL1_\$\OV/0>/A#T'_0__%#M
+MT_YG6K/_  [W_9 _Z)%_Y?WQ/_\ FUHHKICX@\?6_P"2WXOZ?\U+G/\ *O\
+MJ-.%^#?A"]7X5>&[?GP-PP__ 'EA_P .]_V0?^B1?^7]\3__ )M:/^'>_P"R
+M#_T2+_R_OB?_ /-K115?\1!X^_Z+?B__ ,27.?\ YM%_Q!KP@_Z-3X;?^(-P
+MQ_\ .L/^'>_[(/\ T2+_ ,O[XG__ #:T?\.]_P!D'_HD7_E_?$__ .;6BBC_
+M (B#Q]_T6_%__B2YS_\ -H?\0:\(/^C4^&W_ (@W#'_SK#_AWO\ L@_]$B_\
+MO[XG_P#S:T?\.]_V0?\ HD7_ )?WQ/\ _FUHHH_XB#Q]_P!%OQ?_ .)+G/\
+M\VA_Q!KP@_Z-3X;?^(-PQ_\ .L/^'>_[(/\ T2+_ ,O[XG__ #:T?\.]_P!D
+M'_HD7_E_?$__ .;6BBC_ (B#Q]_T6_%__B2YS_\ -H?\0:\(/^C4^&W_ (@W
+M#'_SK#_AWO\ L@_]$B_\O[XG_P#S:T?\.]_V0?\ HD7_ )?WQ/\ _FUHHH_X
+MB#Q]_P!%OQ?_ .)+G/\ \VA_Q!KP@_Z-3X;?^(-PQ_\ .L_3?]EGP;H'PI^%
+M5OX"\#0ZCIGA/0M<U1-%TG4->U_Q,-*@O4M-1GL["]\4ZGK6HVNG?;;NYN(-
+M-ANUL+1YY1:6T"NRDHHK\,SZK5Q6<9CB<54GB<3B,54KXC$5Y2K5Z]:J^>K6
+MK5:CE4JU:DY2G4J3E*<Y-RDVVV?N^2X>A@,IR[ X&A1P6"P>$HX7"8/"4H8?
+A"X7#4(*E0P^&P]&,*5"A1I1C3I4J4(TZ=.,80BHI(__9
+
+end
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>

@@ -5,18 +5,11 @@ use serde::{Deserialize, Serialize};
 type Ticker = String;
 
 #[derive(Serialize, Deserialize)]
-pub enum BuySellTask {
-    Buy(Ticker),
-    Sell(Ticker),
+pub struct BuyTask {
+    
 }
 
-//TODO persistence?
 
-pub enum BuysellCommand {
-    Buy(Ticker),
-    Sell(Ticker),
-    Die,
-}
 
 trait MarketAccount {
     async fn check_ticker_present() -> bool;
@@ -25,7 +18,7 @@ trait MarketAccount {
     async fn sell(ticker: &str);
 }
 
-impl BuySellTask {
+impl BuyTask {
     pub async fn run() {}
 
     fn buy() {}

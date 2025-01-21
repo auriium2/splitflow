@@ -3,6 +3,7 @@
 mod browser;
 pub mod rss_inference;
 pub mod rss_presence;
+mod spoof;
 
 use rayon::prelude::*;
 
@@ -12,6 +13,7 @@ use apalis_redis::RedisStorage;
 use chrono::Utc;
 use feed_rs::parser;
 use futures::{stream, StreamExt};
+use lazy_static::lazy_static;
 use rand::prelude::SliceRandom;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{header, Client, StatusCode};
@@ -28,10 +30,11 @@ use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
 use crate::billboard::perfmon::{PerfmonError, PerfmonTask};
-use crate::buysell::{BuySellTask, BuysellCommand};
+use crate::buysell::{BuyTask, BuysellCommand};
 use crate::core::database::FilingDocument;
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
+use scraper::selectable::Selectable;
 use scraper::{Html, Node, Selector};
 use serenity::all::{
     ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Http, Timestamp,
@@ -72,8 +75,6 @@ pub struct RSSTask {}
 
 struct RssContext {
     core: Data<Arc<Core>>,
-    discord: Data<Arc<Http>>,
-    //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
 }
 
 #[derive(Error, Debug)]
@@ -87,19 +88,16 @@ struct UUIDAndLink {
 pub async fn run_rss(
     _task: PerfmonTask,
     core: Data<Arc<Core>>,
-    discord: Data<Arc<Http>>,
     //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
 ) -> std::result::Result<(), PerfmonError> {
     trace!("running rss task");
-    
+
     RssContext {
         core,
-        discord,
-        //buysell,
     }
     .scan()
     .await?;
-    
+
     info!("done!");
 
     Ok(())
@@ -108,12 +106,7 @@ pub async fn run_rss(
 impl RssContext {
     #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
-        let mut headers: HeaderMap = HeaderMap::new();
-        let (company_name, email): (String, String) = generate_company_name_and_email();
-        let both = format!("{} {}", company_name, email);
-
-        headers.insert(header::USER_AGENT, HeaderValue::from_str(&*both)?);
-        headers.insert(header::HOST, HeaderValue::from_str("www.sec.gov")?);
+        let headers = spoof::generate_headers();
         let future6k = self
             .core
             .client
@@ -139,7 +132,7 @@ impl RssContext {
         &self,
         body6k: String,
         body8k: String,
-    ) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
+    ) -> Result<Vec<UUIDAndLink>> {
         //read the main feeds
         let (feed6k, feed8k) = (
             parser::parse(body6k.as_bytes())?,
@@ -148,21 +141,27 @@ impl RssContext {
         let (size6k, size8k) = (feed6k.entries.len(), feed8k.entries.len());
         // Combine entries from both feeds
 
+        info!("count {}, {}", feed6k.entries.len(), feed8k.entries.len());
+
+
         let mut feed_urls = Vec::new();
         feed_urls.extend(feed6k.entries);
         feed_urls.extend(feed8k.entries);
 
+
         let unseen_uuids = stream::iter(feed_urls)
             .filter_map(|mut individual_entry| async move {
                 let id_copy = individual_entry.id;
+                info!("{}", id_copy.clone());
                 let out = self.core.db.get_filing_document(&id_copy).await;
 
                 //TODO this is a problem, if the db throws db errors we just swallow them
-                if out.is_err() {
+                if let Err(e) = out {
+                    error!("Database error: {:?}", e);
                     return None;
                 }
                 if out.unwrap().is_some() {
-                    return None;
+                     return None;
                 }
                 let ved: Option<UUIDAndLink> = {
                     let z = individual_entry.links.remove(0);
@@ -178,7 +177,7 @@ impl RssContext {
             .collect::<Vec<UUIDAndLink>>()
             .await;
 
-        Ok((size6k, size8k, unseen_uuids))
+        Ok(unseen_uuids)
     }
 
     #[instrument(skip(self, headers, unseen_ids, counter))]
@@ -252,7 +251,7 @@ impl RssContext {
         }
 
         //Merge feeds
-        let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
+        let unseen_ids = self.merge_feeds_and_collect(body6k, body8k).await?;
         info!(
             "found {} unique documents in edgar, status codes [{}] [{}]",
             unseen_ids.len(),
@@ -332,7 +331,7 @@ impl RssContext {
 
 #[instrument(skip_all)]
 async fn fetch_body_bulk(
-    c: &Client,
+    client: &Client,
     urls: Vec<(UUID, Link)>,
     counter: Arc<AtomicI32>,
     headers: HeaderMap,
@@ -344,7 +343,7 @@ async fn fetch_body_bulk(
         let g_move = counter.clone();
         let h_move = headers.clone(); //well i would arc it but the api wants an owned one, so clone it is ._.
         async move {
-            let response = c.get(target.1).headers(h_move).send().await?;
+            let response = client.get(target.1).headers(h_move).send().await?;
             let body = response.text().await?;
             g_move.fetch_add(1, Ordering::Relaxed); //increment progress bar
             sleep(delay_between_requests).await;
@@ -374,7 +373,7 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
             .map(|body| {
                 let g = active_span.enter();
 
-                let filtered_body = extract_all_text(body.1);
+                let filtered_body = preprocess_deep_body(body.1).expect("oops");
                 let ae = detector.detect_rss_potential(filtered_body.as_str());
 
                 drop(g);
@@ -390,28 +389,10 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
 }
 #[instrument(skip(bodies), parent = &tracing::Span::current())]
 async fn extract_8k_links(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Link)>> {
-    info!("test for span loc");
-    let table_selector = Arc::new(Selector::parse("table").unwrap());
-    let row_selector = Arc::new(Selector::parse("tr").unwrap());
-    let cell_selector = Arc::new(Selector::parse("td").unwrap());
-    let link_selector = Arc::new(Selector::parse("a").unwrap());
-
     let results = stream::iter(bodies)
         .map(|body| {
-            let table_selector = table_selector.clone();
-            let row_selector = row_selector.clone();
-            let cell_selector = cell_selector.clone();
-            let link_selector = link_selector.clone();
             async move {
-                let result = process_body(
-                    body.1,
-                    &table_selector,
-                    &row_selector,
-                    &cell_selector,
-                    &link_selector,
-                )
-                .await;
-
+                let result = extract_deep_link_from_intermediary_body(body.1).await;
                 Ok((body.0, result.unwrap()))
             }
         })
@@ -425,131 +406,153 @@ async fn extract_8k_links(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Link)>
     convert_vec(results)
 }
 
+
+
+lazy_static! {
+    static ref TABLE_SELECTOR: Selector = Selector::parse("table").unwrap();
+    static ref ROW_SELECTOR: Selector = Selector::parse("tr").unwrap();
+    static ref CELL_SELECTOR: Selector = Selector::parse("td").unwrap();
+    static ref LINK_SELECTOR: Selector = Selector::parse("a").unwrap();
+    static ref BODY_SELECTOR: Selector = Selector::parse("body").unwrap();
+}
+
+
+
+//TODO this is much more brittle and we should test it
 #[instrument(skip_all, parent = &tracing::Span::current())]
-async fn process_body(
-    body: String,
-    table_selector: &Selector,
-    row_selector: &Selector,
-    cell_selector: &Selector,
-    link_selector: &Selector,
-) -> Result<String> {
-    let document = Html::parse_document(&body);
+async fn extract_deep_link_from_intermediary_body(body: String) -> Result<String> {
+    #[derive(Error,Debug)]
+    enum ProcessIntermediaryError {
+        #[error("the form linking table wasn't present")]
+        TableNotPresentError,
+        #[error("the text file linking row wasn't present")]
+        LastRowNotPresentError,
+        #[error("the text file linking cell wasn't present")]
+        NoLinkError,
+        #[error("the text file linking cell was present but had an empty link???")]
+        EmptyLinkError,
+        #[error("a link is present but didn't actually link anywhere??? (no href)")]
+        NoHrefError,
+        #[error(transparent)]
+        GenericError(#[from] anyhow::Error),
+    }
+    
+    let deeplink = Html::parse_document(&body)
+        .select(&*TABLE_SELECTOR)
+        .next()
+        .ok_or(ProcessIntermediaryError::TableNotPresentError)?
+        .select(&*ROW_SELECTOR)
+        .last()
+        .ok_or(ProcessIntermediaryError::LastRowNotPresentError)?
+        .select(&*CELL_SELECTOR)
+        .nth(2)
+        .ok_or(ProcessIntermediaryError::NoLinkError)?
+        .select(&*LINK_SELECTOR)
+        .next()
+        .ok_or(ProcessIntermediaryError::EmptyLinkError)?
+        .value()
+        .attr("href")
+        .ok_or(ProcessIntermediaryError::NoHrefError)
+        .map(|s| format!("https://www.sec.gov{}", s))?;
+    
+    Ok(deeplink)
+}
 
-    let mut found_link: Option<String> = None;
+#[instrument(skip_all)]
+fn preprocess_deep_body(html: String) -> Result<String> {
+    #[derive(Error,Debug)]
+    enum PreprocessError {
+        #[error("somehow, the body of the final txt file is not present!")]
+        NoBodyError,
+        #[error(transparent)]
+        GenericError(anyhow::Error)
+    }
+    
+    let html_blocks: Vec<&str> = extract_html_blocks(&*html);
+    
+    let body_safe = Html::parse_document(&html)
+        .select(&*BODY_SELECTOR)
+        .next()
+        .ok_or(PreprocessError::NoBodyError)?
+        .text()
+        .map(|text| text.trim())
+        .filter(|trimmed_text| !trimmed_text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    
+    
+    
+    Ok(body_safe)
+}
 
-    for table in document.select(table_selector) {
-        for row in table.select(row_selector).skip(1) {
-            let mut cells = row.select(cell_selector);
-            let _ = cells.next();
-            let _ = cells.next();
-
-            let document_cell = cells.next();
-            let document_link = document_cell
-                .and_then(|cell| cell.select(link_selector).next())
-                .and_then(|link| link.value().attr("href"))
-                .map(|href| format!("https://www.sec.gov{}", href))
-                .unwrap_or_default();
-
-            let description_cell = cells.next();
-            let description = description_cell
-                .map(|cell| cell.text().collect::<Vec<_>>().join(" ").trim().to_string())
-                .unwrap_or_default();
-
-            let desc_upper = description.to_uppercase();
-
-            //TODO make this not so shit
-            if desc_upper.contains("8-K") || desc_upper.contains("6-K") {
-                found_link = Some(document_link);
-                break;
-            }
-        }
-
-        if found_link.is_some() {
+fn extract_html_blocks(input: &str) -> Vec<&str> {
+    let mut results = Vec::new();
+    let mut offset = 0;
+    let lower_input = input.to_lowercase();
+    while let Some(start_pos) = lower_input[offset..].find("<html") {
+        let absolute_start = offset + start_pos;
+        if let Some(rel_end) = lower_input[absolute_start..].find("</html") {
+            let absolute_end = absolute_start + rel_end + "</html>".len();
+            results.push(&input[absolute_start..absolute_end]);
+            offset = absolute_end;
+        } else {
             break;
         }
     }
 
-    if found_link.is_none() {
-        return Err(anyhow!(
-            "oops, didn't find an internal link! Dumping doc {:?}",
-            body
-        ));
-    }
-
-    Ok(found_link.unwrap())
+    results
 }
 
-fn generate_domain_from_name(company_name: &str) -> String {
-    company_name
-        .to_lowercase() // Convert to lowercase
-        .replace(" ", "") // Remove spaces
-        .replace("'", "") // Remove apostrophes
-        .replace("&", "and") // Replace & with "and"
-}
 
-#[instrument(skip_all, parent = &tracing::Span::current())]
-fn generate_company_name_and_email() -> (String, String) {
-    let company_prefixes = vec![
-        "Tech",
-        "Global",
-        "Future",
-        "Net",
-        "Data",
-        "Sky",
-        "Bright",
-        "Prime",
-        "Green",
-        "Cloud",
-        "Quantum",
-        "Innovative",
-        "Smart",
-        "Blue",
-        "Secure",
-        "NextGen",
-    ];
-    let company_suffixes = vec![
-        "Solutions",
-        "Corp",
-        "Systems",
-        "Holdings",
-        "Networks",
-        "Consulting",
-        "Group",
-        "Technologies",
-        "Ventures",
-        "Partners",
-        "Industries",
-        "Services",
-        "Enterprises",
-    ];
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::load_data;
+    use crate::scrape::spoof::generate_headers;
+    use std::fs::File;
+    use std::io::Read;
+    use std::sync::atomic::AtomicI32;
+    use std::sync::Arc;
 
-    let mut rng = rand::thread_rng();
+    #[tokio::test]
+    async fn test_visit_intermediaries() {
+        let core = Arc::new(load_data().await.expect("oops"));
+        let context = RssContext {
+            core: Data::new(core.clone()),
+        };
 
-    let prefix = company_prefixes.choose(&mut rng).unwrap();
-    let suffix = company_suffixes.choose(&mut rng).unwrap();
-    let company_name = format!("{} {}", prefix, suffix);
+        let headers = generate_headers();
+        let unseen_ids = vec![ //TODO iXBRL is a nuisance that i must sort out
+                               //TODO extract stock ticker from the dei:TradingSymbol, instead of the inference
+            UUIDAndLink { uuid: "uuid1".to_string(), link: "https://www.sec.gov/Archives/edgar/data/1497253/000095017025006819/0000950170-25-006819-index.htm".to_string() },
+        ];
+        let counter = Arc::new(AtomicI32::new(0));
 
-    let domain_name = generate_domain_from_name(&company_name);
+        let result = context.visit_intermediaries(&headers, unseen_ids, counter.clone()).await.expect("oops");
+        let result = extract_8k_links(result).await.expect("oops");
 
-    let email = format!("admin@{}.com", domain_name);
+        let veco = result
+            .iter()
+            .map(|v| UUIDAndLink{uuid: v.0.clone(), link: v.1.clone()})
+            .collect::<Vec<UUIDAndLink>>();
 
-    (company_name, email)
-}
+        let visited = context.visit_intermediaries(&headers, veco, counter.clone()).await.expect("TODO: panic message");
 
-#[instrument(skip_all)]
-fn extract_all_text(html: String) -> String {
-    let document = Html::parse_fragment(&html);
-    let mut result = String::new();
-
-    for node in document.tree {
-        if let Some(text) = node.as_text() {
-            let trimmed_text = text.trim();
-            if !trimmed_text.is_empty() {
-                result.push_str(trimmed_text);
-                result.push(' ');
-            }
+        for v in visited {
+            println!("{}", v.1)
         }
     }
 
-    result.trim().to_string()
+    #[test]
+    fn test_extract_all_text() {
+        
+        println!("TEST");
+        let mut file = File::open("assets/test/bioline_6k_deep.txt").expect("Unable to open file");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).expect("Unable to read file");
+
+        let result = preprocess_deep_body(contents);
+        println!("{:?}", result);
+    }
+
 }

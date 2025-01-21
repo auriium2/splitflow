@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Message, Timestamp};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::trace;
+use tracing::{info, trace};
 
 #[derive(Error, Debug)]
 pub enum PerfmonError {
@@ -19,9 +19,6 @@ pub enum PerfmonError {
 
     #[error(transparent)]
     DataError(#[from] anyhow::Error),
-
-    #[error("unknown data store error")]
-    Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,6 +31,8 @@ impl From<DateTime<Utc>> for PerfmonTask {
 }
 
 pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Data<Arc<Http>>, worker: Worker<Context>) -> Result<(), PerfmonError> {
+    info!("is_shutting_down: {}", worker.is_shutting_down());
+    
     trace!("running perfmon task");
     let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;
     
@@ -44,6 +43,8 @@ pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Dat
         let message_id = contents.message_id.parse::<u64>()?;
     
         if worker.is_shutting_down() {
+            let embed = offline_embed();
+            
             old_channel
                 .edit_message(&*discord, message_id, EditMessage::new().embed(embed))
                 .await?;
