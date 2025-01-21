@@ -7,7 +7,6 @@ use mongodb::Collection;
 use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use mongodb::options::ReplaceOptions;
 use tracing::instrument;
 
 #[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]

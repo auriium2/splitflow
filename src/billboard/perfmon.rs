@@ -1,44 +1,58 @@
-use crate::billboard::{BillboardLocation, PERFMON_BB};
+use crate::billboard::PERFMON_BB;
 use crate::core::Core;
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
+use apalis::prelude::{Context, Data, Worker};
+use chrono::DateTime;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Message, Timestamp};
 use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
-use tracing::{error, info, warn};
+use thiserror::Error;
+use tracing::trace;
 
+#[derive(Error, Debug)]
+pub enum PerfmonError {
+    #[error("failed to parse u64")]
+    ParseError(#[from] std::num::ParseIntError),
 
-pub enum PerfmonCommand {
-    Tick,
-    Die
+    #[error("failed to edit message")]
+    EditError(#[from] serenity::Error),
+
+    #[error(transparent)]
+    DataError(#[from] anyhow::Error),
+
+    #[error("unknown data store error")]
+    Unknown,
 }
 
-pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<PerfmonCommand>) -> anyhow::Result<()> {
-    while let Some(cmd) =  rx.recv().await {
-        let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PerfmonTask {}
 
-        match cmd {
-            PerfmonCommand::Tick => {
-                if opt.is_some() {
-                    let contents = opt.unwrap();
-                    let old_channel = ChannelId::new(contents.channel_id.parse()?);
-                    let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(true))).await;
+impl From<DateTime<Utc>> for PerfmonTask {
+    fn from(_value: DateTime<Utc>) -> Self {
+        PerfmonTask {}
+    }
+}
 
-                    if let Err(why) = edit {
-                        error!("Error sending message: {why:?}");
-                    };
-                }
-            }
-            PerfmonCommand::Die => {
-                if opt.is_some() {
-                    let contents = opt.unwrap();
-                    let old_channel = ChannelId::new(contents.channel_id.parse()?);
-                    let edit = old_channel.edit_message(&ctx, contents.message_id.parse::<u64>()?, EditMessage::new().embed(generate_perfmon_embed(false))).await;
+pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Data<Arc<Http>>, worker: Worker<Context>) -> Result<(), PerfmonError> {
+    trace!("running perfmon task");
+    let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;
+    
+    if let Some(contents) = opt {
+        let old_channel = ChannelId::new(contents.channel_id.parse::<u64>()?);
 
-                    if let Err(why) = edit {
-                        error!("Error sending message: {why:?}");
-                    };
-                }
-            }
+        let embed = running_embed();
+        let message_id = contents.message_id.parse::<u64>()?;
+    
+        if worker.is_shutting_down() {
+            old_channel
+                .edit_message(&*discord, message_id, EditMessage::new().embed(embed))
+                .await?;
+            return Ok(());
         }
+        
+        old_channel
+            .edit_message(&*discord, message_id, EditMessage::new().embed(embed))
+            .await?;
     }
     
     Ok(())
@@ -46,21 +60,29 @@ pub async fn task_perfmon(core: Arc<Core>, ctx: Arc<Http>, mut rx: Receiver<Perf
 }
 
 
-fn generate_perfmon_embed(online: bool) -> CreateEmbed {
+
+
+fn offline_embed() -> CreateEmbed {
+    let c: Colour = Colour::from_rgb(255,120,120);
+    let embed = CreateEmbed::new()
+        .color(c)
+        .title("SPLITFLOW | PERFMON [ OFFLINE ]")
+        .description("The bot is currently offline. Please check back later.")
+        .footer(CreateEmbedFooter::new("auriium software"))
+        .timestamp(Timestamp::now());
+    
+    embed
+
+}
+
+fn running_embed() -> CreateEmbed {
     let cpu_load = sys_info::loadavg().unwrap();
     let mem_use = sys_info::mem_info().unwrap();
 
-    let c: Colour = {
-        if online {
-            Colour::from_rgb(120,255,120)
-        } else {
-            Colour::from_rgb(255,120,120)
-        }
-    };
-
+    let c: Colour = Colour::from_rgb(120,255,120);
     let embed = CreateEmbed::new()
         .color(c)
-        .title(if online {"STRIDER | PERFMON [ ONLINE ]"} else {"STRIDER | PERFMON [ OFFLINE ]"})
+        .title("SPLITFLOW | PERFMON [ ONLINE ]")
         .field("CPU Load Average", format!("{:.2}%", cpu_load.one * 10.0), false)
         .field(
             "Memory Usage",

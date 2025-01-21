@@ -1,38 +1,34 @@
 mod robinhood;
 
-use tokio::sync::mpsc::Receiver;
+use serde::{Deserialize, Serialize};
 
 type Ticker = String;
+
+#[derive(Serialize, Deserialize)]
+pub enum BuySellTask {
+    Buy(Ticker),
+    Sell(Ticker),
+}
+
+//TODO persistence?
 
 pub enum BuysellCommand {
     Buy(Ticker),
     Sell(Ticker),
-    Die
+    Die,
 }
 
 trait MarketAccount {
-    
     async fn check_ticker_present() -> bool;
-    
+
     async fn buy(ticker: &str);
     async fn sell(ticker: &str);
 }
 
-pub struct BuySellTask {
-    rx: Receiver<BuysellCommand>
-}
-
 impl BuySellTask {
-    pub async fn run() {
-        
-    }
-    
-    fn buy() {
-        
-    }
-    
-    fn sell() {
-        
-    }
-}
+    pub async fn run() {}
 
+    fn buy() {}
+
+    fn sell() {}
+}

@@ -32,13 +32,17 @@ regex = "1.11.1"
 mongodb = "3.1.1"
 bson = { version = "2.13.0", features = ["chrono-0_4"] }
 quick_cache = "0.6.9"
-tokio-cron-scheduler = { version = "0.13.0", features = ["signal"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.18"
 tracing-timing = "0.6.0"
-tracing-chrome = "0.7.2"
 venator = "1.0.0"
 pyo3 = "0.23.4"
+apalis = { version = "0.6.4", features = ["limit"] }
+apalis-redis = "0.6.4"
+email_address = "0.2.9"
+apalis-cron = "0.6.4"
+thiserror = "1.0.29"
+tower = { version = "0.5.2", features = ["load-shed"] }
 
 
 [build]

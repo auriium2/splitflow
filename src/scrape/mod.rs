@@ -1,38 +1,42 @@
 #![feature(async_closure)]
 
 mod browser;
-pub mod rss_presence;
 pub mod rss_inference;
+pub mod rss_presence;
 
 use rayon::prelude::*;
 
-use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Utc};
+use anyhow::{anyhow, Result};
+use apalis::prelude::Data;
+use apalis_redis::RedisStorage;
+use chrono::Utc;
 use feed_rs::parser;
 use futures::{stream, StreamExt};
-use poise::CreateReply;
 use rand::prelude::SliceRandom;
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{header, Client, Proxy, StatusCode};
+use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{join, sync};
-use tracing::{error, info, info_span, instrument, span, warn, Level};
+use tracing::{error, info, trace, warn};
+use tracing::{info_span, instrument, span};
 
 use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
-use crate::buysell::BuysellCommand;
+use crate::billboard::perfmon::{PerfmonError, PerfmonTask};
+use crate::buysell::{BuySellTask, BuysellCommand};
 use crate::core::database::FilingDocument;
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::{Html, Node, Selector};
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Timestamp};
-use tracing::log::trace;
+use serenity::all::{
+    ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Http, Timestamp,
+};
+use thiserror::Error;
 
 pub enum RSSCommand {
     ResetDay,
@@ -49,7 +53,6 @@ struct BillboardState {
 
 const TIMESTATS_KEY: &[u8; 9] = b"timestats";
 
-
 #[derive(Debug)]
 pub enum RSSGoal {
     Idle,
@@ -64,157 +67,235 @@ const LAST_RSS_KEY: &[u8; 8] = b"last_rss";
 const SEC_6K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=6-K&company=&dateb=&owner=include&start=0&count=100&output=atom";
 const SEC_8K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=8-K&company=&dateb=&owner=include&start=0&count=100&output=atom";
 
-pub struct RSSTask {
-    client: Client,
-    core: Arc<Core>,
-    rx: Receiver<RSSCommand>,
-    tx: Sender<BuysellCommand>
+#[derive(Serialize, Deserialize)]
+pub struct RSSTask {}
+
+struct RssContext {
+    core: Data<Arc<Core>>,
+    discord: Data<Arc<Http>>,
+    //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
 }
+
+#[derive(Error, Debug)]
+enum RssError {}
 
 struct UUIDAndLink {
     uuid: UUID,
     link: String,
 }
 
-impl RSSTask {
-    pub fn new(core: Arc<Core>, rx: Receiver<RSSCommand>, tx: Sender<BuysellCommand>) -> Result<Self> {
-        let client = Client::builder()
-            .proxy(Proxy::https("socks5://p.webshare.io:80")?.basic_auth(core.config.proxy_user.as_str(), core.config.proxy_pass.as_str()))
-            .build()?;
-
-        Ok(Self { client, core, rx, tx})
-    }
+pub async fn run_rss(
+    _task: PerfmonTask,
+    core: Data<Arc<Core>>,
+    discord: Data<Arc<Http>>,
+    //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
+) -> std::result::Result<(), PerfmonError> {
+    trace!("running rss task");
     
+    RssContext {
+        core,
+        discord,
+        //buysell,
+    }
+    .scan()
+    .await?;
+    
+    info!("done!");
+
+    Ok(())
+}
+
+impl RssContext {
     #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
-        let mut headers = HeaderMap::new();
-        let (company_name, email) = generate_company_name_and_email();
+        let mut headers: HeaderMap = HeaderMap::new();
+        let (company_name, email): (String, String) = generate_company_name_and_email();
         let both = format!("{} {}", company_name, email);
 
         headers.insert(header::USER_AGENT, HeaderValue::from_str(&*both)?);
         headers.insert(header::HOST, HeaderValue::from_str("www.sec.gov")?);
-        let future6k = self.client.get(SEC_6K_LINK).headers(headers.clone()).send();
-        let future8k = self.client.get(SEC_8K_LINK).headers(headers.clone()).send();
+        let future6k = self
+            .core
+            .client
+            .get(SEC_6K_LINK)
+            .headers(headers.clone())
+            .send();
+        let future8k = self
+            .core
+            .client
+            .get(SEC_8K_LINK)
+            .headers(headers.clone())
+            .send();
         let (response6k, response8k) = join!(future6k, future8k);
-        let (resp6k, resp8k) = (response6k?,response8k?);
+        let (resp6k, resp8k) = (response6k?, response8k?);
         let (status6k, status8k) = (resp6k.status(), resp8k.status());
         let (body6k, body8k) = (resp6k.text().await?, resp8k.text().await?);
-        
+
         Ok((body6k, body8k, status6k, status8k, headers))
     }
 
-
     #[instrument(skip(self, body6k, body8k))]
-    async fn merge_feeds_and_collect(&self, body6k: String, body8k: String) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
-
+    async fn merge_feeds_and_collect(
+        &self,
+        body6k: String,
+        body8k: String,
+    ) -> Result<(usize, usize, Vec<UUIDAndLink>)> {
         //read the main feeds
-        let (feed6k,feed8k) = (parser::parse(body6k.as_bytes())?, parser::parse(body8k.as_bytes())?);
-        let (size6k,size8k) = (feed6k.entries.len(), feed8k.entries.len());
+        let (feed6k, feed8k) = (
+            parser::parse(body6k.as_bytes())?,
+            parser::parse(body8k.as_bytes())?,
+        );
+        let (size6k, size8k) = (feed6k.entries.len(), feed8k.entries.len());
         // Combine entries from both feeds
 
         let mut feed_urls = Vec::new();
         feed_urls.extend(feed6k.entries);
         feed_urls.extend(feed8k.entries);
 
-        let unseen_uuids = stream::iter(feed_urls).filter_map(|mut individual_entry| async move {
-            let id_copy = individual_entry.id;
-            let out = self.core.db.get_filing_document(&id_copy).await;
+        let unseen_uuids = stream::iter(feed_urls)
+            .filter_map(|mut individual_entry| async move {
+                let id_copy = individual_entry.id;
+                let out = self.core.db.get_filing_document(&id_copy).await;
 
-            //TODO this is a problem, if the db throws db errors we just swallow them
-            if out.is_err() { return None; }
-            if out.unwrap().is_some() { return None; }
-            let ved: Option<UUIDAndLink> = {
-                let z = individual_entry.links.remove(0);
-                let rr = z.href;
+                //TODO this is a problem, if the db throws db errors we just swallow them
+                if out.is_err() {
+                    return None;
+                }
+                if out.unwrap().is_some() {
+                    return None;
+                }
+                let ved: Option<UUIDAndLink> = {
+                    let z = individual_entry.links.remove(0);
+                    let rr = z.href;
 
-                Some(UUIDAndLink {uuid: id_copy, link: rr})
-            };
-            return ved;
-        }).collect::<Vec<UUIDAndLink>>().await;
+                    Some(UUIDAndLink {
+                        uuid: id_copy,
+                        link: rr,
+                    })
+                };
+                return ved;
+            })
+            .collect::<Vec<UUIDAndLink>>()
+            .await;
 
         Ok((size6k, size8k, unseen_uuids))
     }
 
     #[instrument(skip(self, headers, unseen_ids, counter))]
-    async fn visit_intermediaries(&self, headers: &HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
+    async fn visit_intermediaries(
+        &self,
+        headers: &HeaderMap,
+        unseen_ids: Vec<UUIDAndLink>,
+        counter: Arc<AtomicI32>,
+    ) -> Result<Vec<(UUID, Body)>> {
         let max_progress = unseen_ids.len() as u32;
         let hub_counter = counter.clone();
 
         let (killsig_tx, mut killsig_rx) = sync::oneshot::channel::<()>();
-        let ref_client = &self.client; // Need this to prevent client from being moved into the first map
+        let ref_client = &self.core.client; // Need this to prevent client from being moved into the first map
 
-        let unseen_links = unseen_ids.into_iter().map(|tuple| { (tuple.uuid, tuple.link) }).collect::<Vec<(UUID,Link)>>();
+        let unseen_links = unseen_ids
+            .into_iter()
+            .map(|tuple| (tuple.uuid, tuple.link))
+            .collect::<Vec<(UUID, Link)>>();
 
         let mut status_reports: Vec<String> = vec![];
         let base_headers = headers.clone();
 
         let hub_bodies = join!(
-                        async { loop {
-                            match killsig_rx.try_recv() {
-                                Ok(()) => {
-                                    break;
-                                }
-                                _ => {
-                                    let g = format!("scanned [{}/{}] uniques...", hub_counter.load(Ordering::Relaxed), max_progress);
-                                    info!("{}", &g);
-                                    status_reports.push(g);
-                                    sleep(Duration::from_secs(3)).await;
-                                }
-                            }
-                        }},
-                        async {
-                            let out = fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers).await;
-                            killsig_tx.send(()).expect("oops");
-                            return out;
+            async {
+                loop {
+                    match killsig_rx.try_recv() {
+                        Ok(()) => {
+                            break;
                         }
-                    ).1?;
+                        _ => {
+                            let g = format!(
+                                "scanned [{}/{}] uniques...",
+                                hub_counter.load(Ordering::Relaxed),
+                                max_progress
+                            );
+                            info!("{}", &g);
+                            status_reports.push(g);
+                            sleep(Duration::from_secs(3)).await;
+                        }
+                    }
+                }
+            },
+            async {
+                let out =
+                    fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers)
+                        .await;
+                killsig_tx.send(()).expect("oops");
+                return out;
+            }
+        )
+        .1?;
 
-        info!("visited [{}/{}] unique entries...", hub_counter.load(Ordering::Relaxed), max_progress);
+        info!(
+            "visited [{}/{}] unique entries...",
+            hub_counter.load(Ordering::Relaxed),
+            max_progress
+        );
         Ok(hub_bodies)
     }
-    
+
     #[instrument(skip(self))]
     async fn scan(&self) -> Result<()> {
         let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
         let status = status6k.is_success() && status8k.is_success();
         if !status {
-            error!("failed to pull edgar, status codes [{}] [{}]", status6k, status8k);
+            error!(
+                "failed to pull edgar, status codes [{}] [{}]",
+                status6k, status8k
+            );
         }
 
         //Merge feeds
         let (size6k, size8k, unseen_ids) = self.merge_feeds_and_collect(body6k, body8k).await?;
-        info!("found {} unique documents in edgar, status codes [{}] [{}]", unseen_ids.len(), status6k, status8k);
+        info!(
+            "found {} unique documents in edgar, status codes [{}] [{}]",
+            unseen_ids.len(),
+            status6k,
+            status8k
+        );
 
         if unseen_ids.len() == 0 {
             info!("no new entries found, back to sleep");
-            
+
             return Ok(());
         }
 
-
         info!("visiting edgar intermediary pages");
         let counter = Arc::new(AtomicI32::new(0));
-        let intermediary_bodies: Vec<(UUID, Body)> = self.visit_intermediaries(&headers, unseen_ids, counter).await?;
+        let intermediary_bodies: Vec<(UUID, Body)> = self
+            .visit_intermediaries(&headers, unseen_ids, counter)
+            .await?;
 
         info!("extracting 8-k links from intermediaries:");
         let intermediary_links: Vec<(UUID, Link)> = extract_8k_links(intermediary_bodies).await?;
 
         info!("visiting 8-k pages");
         let filings_counter = Arc::new(AtomicI32::new(0));
-        let filing_bodies = fetch_body_bulk(&self.client, intermediary_links, filings_counter, headers).await?;
+        let filing_bodies =
+            fetch_body_bulk(&self.core.client, intermediary_links, filings_counter, headers).await?;
         let everything = extract_has_split(filing_bodies).await?;
 
         trace!("scanning 8-k pages for split status");
-        let all_filings = everything.into_iter().map(|tuple| {
-            let (uuid, body, presence) = tuple;
-            let now = Utc::now();
-            let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
+        let all_filings = everything
+            .into_iter()
+            .map(|tuple| {
+                let (uuid, body, presence) = tuple;
+                let now = Utc::now();
+                let filing_document = FilingDocument::new(uuid, now.into(), presence, None, body);
 
-            filing_document
-        }).collect::<Vec<FilingDocument>>();
-        
+                filing_document
+            })
+            .collect::<Vec<FilingDocument>>();
+
         info!("collecting interesting documents");
-        let mut key_documents = all_filings.iter()
+        let mut key_documents = all_filings
+            .iter()
             .filter(|d| d.is_split.0)
             .map(|d| d.clone()) //todo stop being lazy
             .collect::<Vec<FilingDocument>>();
@@ -226,8 +307,8 @@ impl RSSTask {
         let mut split = 0;
 
         info!("running inference");
-        let inference = LLMInference::new(&self.client, &self.core.config.gpt_key);
-        
+        let inference = LLMInference::new(&self.core.client, &self.core.cfg.gpt_key);
+
         for document in key_documents.iter_mut() {
             let inference_data = inference.infer(&document.body_contents).await?;
             if inference_data.classification == Classification::RoundUp {
@@ -237,39 +318,25 @@ impl RSSTask {
             //update doc
             document.post_inference = Some(inference_data);
         }
-        
+
         info!("pushing inferred filings to db");
         for document in key_documents.into_iter() {
             self.core.db.update_filing_document(document).await?;
         }
-        
+
         info!("real split count: {}", split);
-        
 
         Ok(())
     }
-
-    pub async fn run(mut self) -> Result<()>  {
-        while let Some(command) = self.rx.recv().await {
-            match command {
-                RSSCommand::RunProcess => {
-                    self.scan().await?;
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-
-
 }
 
 #[instrument(skip_all)]
-async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: HeaderMap) -> Result<Vec<(UUID, Body)>> {
+async fn fetch_body_bulk(
+    c: &Client,
+    urls: Vec<(UUID, Link)>,
+    counter: Arc<AtomicI32>,
+    headers: HeaderMap,
+) -> Result<Vec<(UUID, Body)>> {
     let concurrency_limit = 5;
     let delay_between_requests = Duration::from_millis(50);
 
@@ -282,49 +349,54 @@ async fn fetch_body_bulk(c: &Client, urls: Vec<(UUID, Link)>, counter: Arc<Atomi
             g_move.fetch_add(1, Ordering::Relaxed); //increment progress bar
             sleep(delay_between_requests).await;
 
-            Ok((target.0,body))
+            Ok((target.0, body))
         }
     }))
-        .buffer_unordered(concurrency_limit) //io concurrency
-        .collect::<Vec<_>>() // Collect results into a Vec
-        .await;
+    .buffer_unordered(concurrency_limit) //io concurrency
+    .collect::<Vec<_>>() // Collect results into a Vec
+    .await;
 
-    Ok(results.into_iter().filter_map(|i: anyhow::Result<_>| {i.ok()}).collect::<Vec<_>>())
+    Ok(results
+        .into_iter()
+        .filter_map(|i: anyhow::Result<_>| i.ok())
+        .collect::<Vec<_>>())
 }
 
 #[instrument(skip_all, parent = &tracing::Span::current())]
 async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, RssPresence)>> {
-
     let contents = tokio::task::spawn_blocking(move || {
         let detector = Arc::new(RSSPhaseOneDetector::new());
 
         let active_span = tracing::Span::current();
-        
-        let extracted = bodies.into_par_iter().map(|body| {
-            let g = active_span.enter();
-            
-            let filtered_body = extract_all_text(body.1);
-            let ae = detector.detect_rss_potential(filtered_body.as_str());
-            
-            
-            drop(g);
-            return (body.0, filtered_body, ae)
-        }).collect::<Vec<_>>();
-        
+
+        let extracted = bodies
+            .into_par_iter()
+            .map(|body| {
+                let g = active_span.enter();
+
+                let filtered_body = extract_all_text(body.1);
+                let ae = detector.detect_rss_potential(filtered_body.as_str());
+
+                drop(g);
+                return (body.0, filtered_body, ae);
+            })
+            .collect::<Vec<_>>();
+
         extracted
-    }).await?;
-    
+    })
+    .await?;
+
     Ok(contents)
 }
 #[instrument(skip(bodies), parent = &tracing::Span::current())]
-async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> {
+async fn extract_8k_links(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Link)>> {
     info!("test for span loc");
     let table_selector = Arc::new(Selector::parse("table").unwrap());
     let row_selector = Arc::new(Selector::parse("tr").unwrap());
     let cell_selector = Arc::new(Selector::parse("td").unwrap());
     let link_selector = Arc::new(Selector::parse("a").unwrap());
 
-    let results= stream::iter(bodies)
+    let results = stream::iter(bodies)
         .map(|body| {
             let table_selector = table_selector.clone();
             let row_selector = row_selector.clone();
@@ -338,9 +410,9 @@ async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> 
                     &cell_selector,
                     &link_selector,
                 )
-                    .await;
+                .await;
 
-                Ok((body.0,result.unwrap()))
+                Ok((body.0, result.unwrap()))
             }
         })
         .buffer_unordered(10) //TODO: this probably should be done on a different thread pool than the io pool
@@ -352,8 +424,6 @@ async fn extract_8k_links(bodies: Vec<(UUID,Body)>) -> Result<Vec<(UUID,Link)>> 
     }
     convert_vec(results)
 }
-
-
 
 #[instrument(skip_all, parent = &tracing::Span::current())]
 async fn process_body(
@@ -382,19 +452,13 @@ async fn process_body(
 
             let description_cell = cells.next();
             let description = description_cell
-                .map(|cell| {
-                    cell.text()
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .trim()
-                        .to_string()
-                })
+                .map(|cell| cell.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .unwrap_or_default();
 
             let desc_upper = description.to_uppercase();
 
             //TODO make this not so shit
-            if desc_upper.contains("8-K") || desc_upper.contains("6-K"){
+            if desc_upper.contains("8-K") || desc_upper.contains("6-K") {
                 found_link = Some(document_link);
                 break;
             }
@@ -406,30 +470,57 @@ async fn process_body(
     }
 
     if found_link.is_none() {
-        return Err(anyhow!("oops, didn't find an internal link! Dumping doc {:?}", body));
+        return Err(anyhow!(
+            "oops, didn't find an internal link! Dumping doc {:?}",
+            body
+        ));
     }
 
     Ok(found_link.unwrap())
 }
 
-
 fn generate_domain_from_name(company_name: &str) -> String {
     company_name
-        .to_lowercase()               // Convert to lowercase
-        .replace(" ", "")              // Remove spaces
-        .replace("'", "")              // Remove apostrophes
-        .replace("&", "and")           // Replace & with "and"
+        .to_lowercase() // Convert to lowercase
+        .replace(" ", "") // Remove spaces
+        .replace("'", "") // Remove apostrophes
+        .replace("&", "and") // Replace & with "and"
 }
 
 #[instrument(skip_all, parent = &tracing::Span::current())]
 fn generate_company_name_and_email() -> (String, String) {
     let company_prefixes = vec![
-        "Tech", "Global", "Future", "Net", "Data", "Sky", "Bright", "Prime", "Green",
-        "Cloud", "Quantum", "Innovative", "Smart", "Blue", "Secure", "NextGen"
+        "Tech",
+        "Global",
+        "Future",
+        "Net",
+        "Data",
+        "Sky",
+        "Bright",
+        "Prime",
+        "Green",
+        "Cloud",
+        "Quantum",
+        "Innovative",
+        "Smart",
+        "Blue",
+        "Secure",
+        "NextGen",
     ];
     let company_suffixes = vec![
-        "Solutions", "Corp", "Systems", "Holdings", "Networks", "Consulting", "Group",
-        "Technologies", "Ventures", "Partners", "Industries", "Services", "Enterprises"
+        "Solutions",
+        "Corp",
+        "Systems",
+        "Holdings",
+        "Networks",
+        "Consulting",
+        "Group",
+        "Technologies",
+        "Ventures",
+        "Partners",
+        "Industries",
+        "Services",
+        "Enterprises",
     ];
 
     let mut rng = rand::thread_rng();
@@ -444,7 +535,6 @@ fn generate_company_name_and_email() -> (String, String) {
 
     (company_name, email)
 }
-
 
 #[instrument(skip_all)]
 fn extract_all_text(html: String) -> String {
