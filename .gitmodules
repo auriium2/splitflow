@@ -1,0 +1,3 @@
+[submodule "splitflow-buy"]
+	path = splitflow-buy
+	url = https://github.com/auriium2/splitflow-buy.git
