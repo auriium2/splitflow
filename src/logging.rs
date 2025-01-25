@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 /*
 
     He logs to console and then sends log to diskored, silly creature

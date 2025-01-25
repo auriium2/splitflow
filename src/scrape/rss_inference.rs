@@ -1,20 +1,23 @@
 //TODO re-add local llm or use bert
 
+use std::time::Duration;
 use chrono::{DateTime, Utc};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::instrument;
+use thiserror::Error;
+use tokio::time::sleep;
+use tracing::{info, instrument, warn};
 
 static PROMPT: &str = r#"
-Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, Other. 
+Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, AlreadyHappened, Other. If it seems like the company has already split and is just notifying shareholders, use AlreadyHappened. 
 
 Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information. Cite your sources in the document in your reasoning.
 
 Ensure your response is a JSON object in the following format (without comments):
 {
   "reasoning": "something",
-  "ticker": "something", // the company's corresponding stock ticker
+  "ticker": "something", // the company's corresponding NYSE or NASDAQ stock ticker, all caps
   "classification": "RoundUp",  // only allows (case-sensitive) one of (RoundUp, RoundDown, Cash, NotSplit, Other)
   "ex_date": "something",  //  ISO 8601 datetime for the ex-date with UTC timezone, or null if not found
 }
@@ -29,6 +32,7 @@ pub enum Classification {
     RoundDown,
     Cash,
     NotSplit,
+    AlreadyHappened,
     Other
 }
 
@@ -55,23 +59,43 @@ pub trait Inference {
     async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput>;
 }
 
+#[derive(Debug, Error)]
+enum InferenceError {
+
+    #[error(transparent)]
+    RequestError(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    JsonError(#[from] serde_json::Error),
+    
+    #[error("rate limited")]
+    RateLimitedError(StatusCode)
+}
+
 impl Inference for LLMInference<'_> {
     
-    #[instrument(skip_all)]
+   /* #[instrument(skip_all)]
     async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput> {
+        info!("Inferencing with LLM model");
+        
         let request_body = json!({
         "model": "gpt-4o-mini",
         "messages": [
             { "role": "system", "content": "You are an expert financial analyst." },
             { "role": "user", "content": PROMPT.replace("{}", &document_text.join("\n")) }
         ]
-    });
+        });
         let response = self.client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request_body)
             .send()
             .await?;
+        
+        if response.status() != StatusCode::OK {
+            return Err(InferenceError::RateLimitedError(response.status()).into());
+        }
+        
         let response_json: serde_json::Value = response.json().await?;
         let chatgpt_response = response_json["choices"][0]["message"]["content"]
             .as_str()
@@ -83,18 +107,96 @@ impl Inference for LLMInference<'_> {
             .trim_end_matches("```")
             .to_string();
 
+        info!("done with inference");
+        
         let chatgpt_response = serde_json::from_str::<InferenceOutput>(&chatgpt_response)?;
 
         Ok(chatgpt_response)
+    }*/
+    
+    #[instrument(skip_all)]
+    async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput> {
+        info!("Inferencing with LLM model");
+
+        let request_body = json!({
+        "model": "gpt-4o-mini",
+        "messages": [
+            { "role": "system", "content": "You are an expert financial analyst." },
+            { "role": "user", "content": PROMPT.replace("{}", &document_text.join("\n")) }
+        ]
+    });
+
+        let mut attempt = 0;
+        let max_attempts = 9;
+        let mut delay = Duration::from_secs(1);
+
+        while attempt < max_attempts {
+            let response = self.client
+                .post("https://api.openai.com/v1/chat/completions")
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .json(&request_body)
+                .send()
+                .await?;
+            
+            info!("request sent and recvs");
+            
+            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                attempt += 1;
+                warn!("Rate limited. Retrying in {:?}...", delay);
+                sleep(delay).await;
+                delay *= 2;  // Exponential backoff
+                continue;
+            }
+
+            let response_json: serde_json::Value = response.json().await?;
+            let chatgpt_response = response_json["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+                .trim()
+                .trim_start_matches("json")
+                .trim_start_matches("")
+                .trim_end_matches("`")
+                .to_string();
+
+            info!("done with inference");
+
+            let chatgpt_response = serde_json::from_str::<InferenceOutput>(&chatgpt_response)?;
+            return Ok(chatgpt_response);
+        }
+
+        Err(anyhow::anyhow!("Exceeded maximum retries due to rate limiting"))
     }
 }
 
 
-#[cfg(test)]
 mod tests {
+    use dotenv::dotenv;
     use super::*;
     use serde_json::json;
 
+    #[tokio::test]
+    async fn test_infer() {
+        dotenv().ok();
+        let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set");
+    
+        let client = Client::new();
+        let inference = LLMInference::new(&client, &api_key);
+    
+        let document_text = vec![
+            "This is a sample document about AAPL".to_string(),
+            "It contains information about a 1 to 5 reverse stock split".to_string(),
+        ];
+    
+        let result = inference.infer(&document_text).await;
+    
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.ticker, "AAPL");
+        assert_eq!(output.classification, Classification::RoundUp);
+        assert!(output.ex_date.is_none());
+    }
+    
     #[test]
     fn test_deserialization_with_chatgpt_real_output() {
 
@@ -136,6 +238,36 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_spam() {
+        dotenv().ok();
+        let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set");
+
+        let client = Client::new();
+        let inference = LLMInference::new(&client, &api_key);
+
+        let document_text = vec![
+            "This is a sample document about AAPL".to_string(),
+            "It contains information about a 1 to 5 reverse stock split".to_string(),
+        ];
+
+        let result = inference.infer(&document_text).await;
+        println!("1");
+        let result = inference.infer(&document_text).await;
+        println!("2");
+        let result = inference.infer(&document_text).await;
+        println!("3");
+        let result = inference.infer(&document_text).await;
+        println!("4");
+        let result = inference.infer(&document_text).await;
+        println!("5");
+        
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.ticker, "AAPL");
+        assert_eq!(output.classification, Classification::RoundUp);
+        assert!(output.ex_date.is_none());
+    }
     #[test]
     fn test_internal_inference_output_deserialization_with_null_ex_date() {
         let sample_json = json!({

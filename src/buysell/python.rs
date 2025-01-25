@@ -15,7 +15,7 @@ impl Purchaser for PythonPurchaser {
 
     async fn buy(&self, ticker: &str) -> anyhow::Result<()> {
         self.client
-            .post("http://localhost:8081/api")
+            .post("http://localhost:8080/")
             .json(&json!({ "ticker": ticker }))
             .send()
             .await?;

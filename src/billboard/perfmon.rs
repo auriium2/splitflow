@@ -4,18 +4,21 @@ use apalis::prelude::{Context, Data, Worker};
 use chrono::DateTime;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Message, Timestamp};
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::{info, trace};
 
 #[derive(Error, Debug)]
 pub enum PerfmonError {
-    #[error("failed to parse u64")]
+    #[error(transparent)]
     ParseError(#[from] std::num::ParseIntError),
 
-    #[error("failed to edit message")]
+    #[error(transparent)]
     EditError(#[from] serenity::Error),
+
+    #[error(transparent)]
+    HttpError(#[from] reqwest::Error),
 
     #[error(transparent)]
     DataError(#[from] anyhow::Error),
@@ -31,7 +34,7 @@ impl From<DateTime<Utc>> for PerfmonTask {
 }
 
 pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Data<Arc<Http>>, worker: Worker<Context>) -> Result<(), PerfmonError> {
-    info!("is_shutting_down: {}", worker.is_shutting_down());
+    //info!("is_shutting_down: {}", worker.is_shutting_down());
     
     trace!("running perfmon task");
     let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;

@@ -9,10 +9,9 @@ use image::{ImageBuffer, Rgba};
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
 use serenity::all::{ChannelId, Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter, EditMessage, Http, MessageId, Timestamp};
 use tokio::sync::mpsc::Receiver;
-use tracing::{error, info, warn};
+use tracing::error;
 
 
-use crate::billboard::BillboardLocation;
 use crate::core::database::SignpostDocument;
 use crate::core::Core;
 

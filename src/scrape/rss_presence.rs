@@ -9,7 +9,7 @@ pub(crate) struct RSSPhaseOneDetector<const N: usize> {
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
-pub struct RssPresence(pub bool, bool, bool); 
+pub struct RssPresence(pub bool, i64, i64); 
 
 impl RSSPhaseOneDetector<22> {
 
@@ -17,9 +17,35 @@ impl RSSPhaseOneDetector<22> {
     //please run this in rayon
     //why regex slow ._.
     //please stop running in debug profile
+
+    pub fn detect_rss_potential(&self, filing_text: Vec<String>) -> (RssPresence, Vec<String>) {
+        let mut has_split = false;
+        let mut count_synonym = 0;
+        let mut count_ratio = 0;
+        let mut filtered_texts = Vec::new();
+
+        for text in filing_text {
+            let lower = text.to_lowercase();
+            let contains_synonym = self.synonyms.iter().any(|syn| lower.contains(syn.to_lowercase().as_str()));
+            let contains_ratio = self.regex.iter().any(|regex| regex.is_match(&lower));
+            
+            if contains_synonym && contains_ratio {
+                has_split = true;
+                count_ratio += 1;
+                count_synonym += 1;
+                filtered_texts.push(text.clone());
+            } else if contains_synonym {
+                count_synonym += 1;
+            } else if contains_ratio {
+                count_ratio += 1;
+            }
+        }
+
+        // Decide
+        (RssPresence(has_split, count_synonym, count_ratio), filtered_texts)
+    }
     
-    
-    pub fn detect_rss_potential(&self, filing_text: &Vec<String>) -> RssPresence {
+    /*pub fn detect_rss_potential(&self, filing_text: &Vec<String>) -> RssPresence {
         let mut has_synonym = false;
         let mut has_ratio = false;
         
@@ -38,8 +64,8 @@ impl RSSPhaseOneDetector<22> {
         }
 
         // Decide
-        RssPresence(has_synonym || has_ratio, has_synonym, has_ratio)
-    }
+        RssPresence(has_synonym && has_ratio, has_synonym, has_ratio)
+    }*/
     
     pub fn new() -> RSSPhaseOneDetector<22> {
         let patterns = [
@@ -166,7 +192,7 @@ Date: January 10, 2025	By:	/s/ Christian Kanstrup
         let mut container = Vec::<String>::new();
         container.push(yap.parse().unwrap());
         
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(&container).0, true);
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(container).0.0, true);
     }
     
     #[test]
@@ -192,7 +218,7 @@ The representations, warranties and covenants contained in the Agreement were ma
         let mut container = Vec::<String>::new();
         container.push(yap.parse().unwrap());
 
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(&container).0, true);
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(container).0.0, true);
     }
     
     

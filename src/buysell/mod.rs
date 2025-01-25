@@ -11,7 +11,7 @@ pub struct BuyTask {
     ticker: String
 }
 
-pub struct BuyService {
+pub struct BuySellService {
     purchasers: Vec<Box<dyn Purchaser>>
 }
 
@@ -29,7 +29,7 @@ trait Purchaser {
     async fn buy(&self, ticker: &str) -> anyhow::Result<()>;
 }
 
-impl BuyService {
+impl BuySellService {
     async fn buy(&self, ticker: &str) -> Result<(),BuyServiceError> {
         for x in &self.purchasers {
             x.buy(ticker).await?;

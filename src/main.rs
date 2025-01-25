@@ -2,11 +2,10 @@
 
 extern crate pretty_env_logger;
 
-use crate::billboard::console::{ConsoleCommand, ConsoleMessage, DateCommand};
 use crate::billboard::perfmon::*;
-use crate::billboard::{deploy, perfmon, NEUTRAL_CONSOLE_BB, RSS_CONSOLE_BB};
+use crate::billboard::deploy;
 use crate::scrape::run_rss;
-use apalis::prelude::{Data, Monitor, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
+use apalis::prelude::{Monitor, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
 use apalis_cron::{CronStream, Schedule};
 use core::Core;
 use poise::{serenity_prelude as serenity, Framework};
@@ -15,15 +14,16 @@ use serenity::async_trait;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use apalis::layers::tracing::OnFailure;
+use tokio::sync::mpsc::{channel, Sender};
 use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
 use tracing::{info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{prelude::*, registry::Registry};
-use tracing_subscriber::{registry, EnvFilter};
+use tracing_subscriber::EnvFilter;
 use venator::Venator;
 
 
@@ -40,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
         .add_directive("splitflow=info".parse()?)
         .add_directive("tokio=warn".parse()?)
         .add_directive("tokio_cron_scheduler=trace".parse()?)
+        .add_directive("apalis=warn".parse()?)
         .add_directive("serenity=warn".parse()?);
+    
 
     let subscriber = Registry::default()
         .with(Venator::default())
@@ -55,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     info!("loaded core");
 
     //DISCORD STUFF
-    let (ready_tx, mut ready_rx) = channel::<u8>(1);
+    let (ready_tx, ready_rx) = channel::<u8>(1);
     let token: String = { core.cfg.discord_token.clone() };
     let intents = serenity::GatewayIntents::non_privileged()
         | serenity::GatewayIntents::MESSAGE_CONTENT
@@ -90,6 +92,8 @@ async fn main() -> anyhow::Result<()> {
     //performance monitor
     let perfmon_worker = WorkerBuilder::new("perfmon")
         .enable_tracing()
+        .layer(LoadShedLayer::new())
+        .layer(ConcurrencyLimitLayer::new(1))
         .data(core.clone())
         .data(client.http.clone())
         .backend(CronStream::new(Schedule::from_str("1/7 * * * * *")?))
@@ -98,12 +102,11 @@ async fn main() -> anyhow::Result<()> {
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
         .enable_tracing()
-        .rate_limit(1, Duration::from_secs(5))
         .layer(LoadShedLayer::new())
         .layer(ConcurrencyLimitLayer::new(1))
         .data(core.clone())
         .data(client.http.clone())
-        .backend(CronStream::new(Schedule::from_str("1/1 * * * * *")?))
+        .backend(CronStream::new(Schedule::from_str("0 */1 * * * *")?))
         .build_fn(run_rss);
 
     //discord processors
@@ -128,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(4)).await;
 
     info!("Shutting down...");
     Ok(())

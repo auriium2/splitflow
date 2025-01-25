@@ -5,18 +5,17 @@ pub mod rss_inference;
 pub mod rss_presence;
 mod spoof;
 
+use std::result;
 use rayon::prelude::*;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use apalis::prelude::Data;
-use apalis_redis::RedisStorage;
 use chrono::Utc;
 use feed_rs::parser;
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
-use rand::prelude::SliceRandom;
-use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{header, Client, StatusCode};
+use reqwest::header::HeaderMap;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
@@ -24,22 +23,18 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tokio::{join, sync};
 use tracing::{error, info, trace, warn};
-use tracing::{info_span, instrument, span};
+use tracing::instrument;
 
-use crate::billboard::console::{Console, ConsoleMessage, DateCommand};
 use crate::core::{Body, Core, Link, UUID};
 
 use crate::billboard::perfmon::{PerfmonError, PerfmonTask};
-use crate::buysell::BuyTask;
 use crate::core::database::FilingDocument;
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::selectable::Selectable;
-use scraper::{Html, Node, Selector};
-use serenity::all::{
-    ChannelId, Colour, CreateEmbed, CreateEmbedFooter, CreateMessage, Http, Timestamp,
-};
+use scraper::{Html, Selector};
 use thiserror::Error;
+use crate::scrape::FetchBodyError::BadStatusError;
 
 pub enum RSSCommand {
     ResetDay,
@@ -78,7 +73,10 @@ struct RssContext {
 }
 
 #[derive(Error, Debug)]
-enum RssError {}
+enum ScraperError {
+    #[error(transparent)]
+    GenericError(#[from] anyhow::Error)
+}
 
 struct UUIDAndLink {
     uuid: UUID,
@@ -95,10 +93,10 @@ pub async fn run_rss(
     RssContext {
         core,
     }
-    .scan()
-    .await?;
+        .scan()
+        .await?;
 
-    info!("done!");
+    trace!("done!");
 
     Ok(())
 }
@@ -119,9 +117,11 @@ impl RssContext {
             .get(SEC_8K_LINK)
             .headers(headers.clone())
             .send();
+        
         let (response6k, response8k) = join!(future6k, future8k);
         let (resp6k, resp8k) = (response6k?, response8k?);
         let (status6k, status8k) = (resp6k.status(), resp8k.status());
+
         let (body6k, body8k) = (resp6k.text().await?, resp8k.text().await?);
 
         Ok((body6k, body8k, status6k, status8k, headers))
@@ -141,7 +141,7 @@ impl RssContext {
         let (size6k, size8k) = (feed6k.entries.len(), feed8k.entries.len());
         // Combine entries from both feeds
 
-        info!("count {}, {}", feed6k.entries.len(), feed8k.entries.len());
+        trace!("count {}, {}", feed6k.entries.len(), feed8k.entries.len());
 
 
         let mut feed_urls = Vec::new();
@@ -154,29 +154,84 @@ impl RssContext {
                 let id_copy = individual_entry.id;
                 let out = self.core.db.get_filing_document(&id_copy).await;
 
-                //TODO this is a problem, if the db throws db errors we just swallow them
                 if let Err(e) = out {
-                    error!("Database error: {:?}", e);
-                    return None;
+                    return Some(Err(e));
                 }
                 if out.unwrap().is_some() {
                      return None;
                 }
-                let ved: Option<UUIDAndLink> = {
+                let ved = {
                     let z = individual_entry.links.remove(0);
                     let rr = z.href;
 
-                    Some(UUIDAndLink {
+                    Some(Ok(UUIDAndLink {
                         uuid: id_copy,
                         link: rr,
-                    })
+                    }))
                 };
                 return ved;
             })
-            .collect::<Vec<UUIDAndLink>>()
-            .await;
+            .collect::<Vec<Result<UUIDAndLink>>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<UUIDAndLink>>>();
 
-        Ok(unseen_uuids)
+        unseen_uuids
+    }
+
+    #[instrument(skip(self, headers, unseen_ids, counter))]
+    async fn visit_deeplink(
+        &self,
+        headers: &HeaderMap,
+        unseen_ids: Vec<UUIDAndLink>,
+        counter: Arc<AtomicI32>,
+    ) -> Result<Vec<(UUID, Body)>> {
+        let max_progress = unseen_ids.len() as u32;
+        let hub_counter = counter.clone();
+
+        let (killsig_tx, mut killsig_rx) = sync::oneshot::channel::<()>();
+        let ref_client = &self.core.client; // Need this to prevent client from being moved into the first map
+
+        let unseen_links = unseen_ids
+            .into_iter()
+            .map(|tuple| (tuple.uuid, tuple.link))
+            .collect::<Vec<(UUID, Link)>>();
+
+        let base_headers = headers.clone();
+
+        let hub_bodies = join!(
+            async { loop {
+                    match killsig_rx.try_recv() {
+                        Ok(()) => {
+                            break;
+                        }
+                        _ => {
+                            let g = format!(
+                                "scanned [{}/{}] uniques...",
+                                hub_counter.load(Ordering::Relaxed),
+                                max_progress
+                            );
+                            info!("{}",g);
+                            sleep(Duration::from_secs(3)).await;
+                        }
+                    }
+            } },
+            async {
+                let out =
+                    fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers)
+                        .await;
+                killsig_tx.send(()).expect("oops");
+                return out;
+            }
+        )
+            .1?;
+
+        info!(
+            "visited [{}/{}] unique entries...",
+            hub_counter.load(Ordering::Relaxed),
+            max_progress
+        );
+        Ok(hub_bodies)
     }
 
     #[instrument(skip(self, headers, unseen_ids, counter))]
@@ -197,12 +252,10 @@ impl RssContext {
             .map(|tuple| (tuple.uuid, tuple.link))
             .collect::<Vec<(UUID, Link)>>();
 
-        let mut status_reports: Vec<String> = vec![];
         let base_headers = headers.clone();
 
         let hub_bodies = join!(
-            async {
-                loop {
+            async { loop {
                     match killsig_rx.try_recv() {
                         Ok(()) => {
                             break;
@@ -213,12 +266,11 @@ impl RssContext {
                                 hub_counter.load(Ordering::Relaxed),
                                 max_progress
                             );
-                            status_reports.push(g);
+                            info!("{}",g);
                             sleep(Duration::from_secs(3)).await;
                         }
                     }
-                }
-            },
+            } },
             async {
                 let out =
                     fetch_body_bulk(ref_client, unseen_links, hub_counter.clone(), base_headers)
@@ -249,6 +301,7 @@ impl RssContext {
                 status6k, status8k
             );
         }
+        
 
         //Merge feeds
         let unseen_ids = self.merge_feeds_and_collect(body6k, body8k).await?;
@@ -260,7 +313,7 @@ impl RssContext {
         );
 
         if unseen_ids.len() == 0 {
-            info!("no new entries found, back to sleep");
+            trace!("no new entries found, back to sleep");
 
             return Ok(());
         }
@@ -276,7 +329,7 @@ impl RssContext {
 
         info!("visiting 8-k pages");
         let filings_counter = Arc::new(AtomicI32::new(0));
-        let filing_bodies =
+        let filing_bodies: Vec<(UUID,Body)> =
             fetch_body_bulk(&self.core.client, intermediary_links, filings_counter, headers).await?;
         let everything = extract_has_split(filing_bodies).await?;
 
@@ -329,6 +382,18 @@ impl RssContext {
     }
 }
 
+#[derive(Debug, Error)]
+enum FetchBodyError {
+    #[error(transparent)]
+    GenericError(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    HttpError(#[from] reqwest::Error),
+    
+    #[error("bad status code: {0}")]
+    BadStatusError(StatusCode)
+}
+
 #[instrument(skip_all)]
 async fn fetch_body_bulk(
     client: &Client,
@@ -344,11 +409,14 @@ async fn fetch_body_bulk(
         let h_move = headers.clone(); //well i would arc it but the api wants an owned one, so clone it is ._.
         async move {
             let response = client.get(target.1).headers(h_move).send().await?;
+            if !response.status().is_success() {
+                return Err(anyhow::anyhow!("Request failed with status: {}", response.status()));
+            }            
             let body = response.text().await?;
             g_move.fetch_add(1, Ordering::Relaxed); //increment progress bar
             sleep(delay_between_requests).await;
 
-            Ok((target.0, body))
+            return Ok((target.0, body));
         }
     }))
     .buffer_unordered(concurrency_limit) //io concurrency
@@ -374,10 +442,10 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Vec<B
                 let g = active_span.enter();
 
                 let filtered_body = preprocess_deep_body(body.1).expect("oops");
-                let ae = detector.detect_rss_potential(&filtered_body);
+                let (presence, filtered_bodies) = detector.detect_rss_potential(filtered_body);
 
                 drop(g);
-                return (body.0, filtered_body, ae);
+                return (body.0, filtered_bodies, presence);
             })
             .collect::<Vec<_>>();
 
@@ -559,3 +627,52 @@ mod tests {
     }
 
 }
+/*#[tokio::test]
+async fn test_scan_unique_with_429() {
+    use httpmock::MockServer;
+    use httpmock::Method::GET;
+    use std::sync::atomic::AtomicI32;
+    use std::sync::Arc;
+
+    // Start a local mock server
+    let server = MockServer::start();
+
+    // Create a mock for the 6-K link that returns a 429 status code
+    let _mock6k = server.mock(|when, then| {
+        when.method(GET)
+            .path("/cgi-bin/browse-edgar")
+            .query_param("action", "getcurrent")
+            .query_param("type", "6-K");
+        then.status(429);
+    });
+
+    // Create a mock for the 8-K link that returns a 200 status code with a valid feed
+    let _mock8k = server.mock(|when, then| {
+        when.method(GET)
+            .path("/cgi-bin/browse-edgar")
+            .query_param("action", "getcurrent")
+            .query_param("type", "8-K");
+        then.status(200)
+            .body(include_str!("../../assets/test/valid_feed.xml"));
+    });
+
+    let core = Arc::new(load_data().await.expect("oops"));
+    let context = RssContext {
+        core: Data::new(core.clone()),
+    };
+
+    let headers = generate_headers();
+    let unseen_ids = vec![
+        UUIDAndLink { uuid: "uuid1".to_string(), link: format!("{}/cgi-bin/browse-edgar?action=getcurrent&type=6-K", server.base_url()) },
+        UUIDAndLink { uuid: "uuid2".to_string(), link: format!("{}/cgi-bin/browse-edgar?action=getcurrent&type=8-K", server.base_url()) },
+    ];
+    let counter = Arc::new(AtomicI32::new(0));
+
+    let result = context.visit_intermediaries(&headers, unseen_ids, counter.clone()).await;
+
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Request failed with status: 429"));
+    }
+}
+*/

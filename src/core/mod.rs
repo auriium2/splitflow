@@ -1,15 +1,11 @@
 use crate::core::database::{CoreDB, FilingDocument, SignpostDocument};
-use chrono::DateTime;
-use mongodb::options::ClientOptions;
 use mongodb::Client;
 use quick_cache::sync::Cache;
 use reqwest::Proxy;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use tracing::{error, info, warn};
+use tracing::info;
 
 pub mod database;
 
@@ -33,8 +29,8 @@ impl Default for StriderConfig {
             discord_token: "MTI5NDQ2MDM3NzQ5NjU1NTU3MQ.Gn0pt_.rVieVlz58vTxDUU7gT1AaxKlFVOUnsF_cJBn8g".to_string(),
             mongo_user: "admin".to_string(),
             mongo_password: "DHOeETe48VOOg4WN".to_string(),
-            proxy_user: "desouisv-rotate".to_string(),
-            proxy_pass: "fw7rphncsa5e".to_string(),
+            proxy_user: "whokwhmg-rotate".to_string(),
+            proxy_pass: "jmditeewz262".to_string(),
             gpt_key: "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".to_string(),
         }
     }
@@ -70,12 +66,18 @@ pub async fn load_data() -> anyhow::Result<Core> {
     let filing_cache: Cache<UUID, Option<Arc<FilingDocument>>> = Cache::new(300);
     info!("Connected to database!");
 
+    let proxy_url = "http://whokwhmg-rotate:jmditeewz262@p.webshare.io:80/";
+    let proxy = Proxy::all(proxy_url)?;
+    
     let client = reqwest::Client::builder()
         .proxy(
-            Proxy::https("socks5://p.webshare.io:80")?
-                .basic_auth(cfg.proxy_user.as_str(), cfg.proxy_pass.as_str()),
+            proxy
+            /*Proxy::all("socks5://p.webshare.io:80")?
+                .basic_auth(cfg.proxy_user.as_str(), cfg.proxy_pass.as_str()),*/
         )
         .build()?;
+
+    
 
     Ok(Core {
         cfg,
@@ -87,3 +89,32 @@ pub async fn load_data() -> anyhow::Result<Core> {
 pub type UUID = String;
 pub type Link = String;
 pub type Body = String;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use quick_cache::sync::Cache;
+    use mongodb::Client;
+    use reqwest::Client as ReqwestClient;
+    use tracing::info;
+
+    #[tokio::test]
+    async fn test_load_data() -> anyhow::Result<()> {
+        let proxy_url = "http://whokwhmg-rotate:jmditeewz262@p.webshare.io:80/";
+
+        let client = reqwest::Client::builder()
+            .proxy(Proxy::all(proxy_url)?)
+            .build()?;
+
+        let response = client
+            .get("https://ipv4.webshare.io/")
+            .send()
+            .await?;
+
+        // Print the response body
+        println!("Response: {}", response.text().await?);
+
+        Ok(())
+    }
+}
