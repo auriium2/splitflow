@@ -19,17 +19,23 @@ impl RSSPhaseOneDetector<22> {
     //please stop running in debug profile
     
     
-    pub fn detect_rss_potential(&self, filing_text: &str) -> RssPresence {
-        let lower = filing_text.to_lowercase();
-
-
-        // Check if we have a synonym for reverse stock split or a share consolidation
-        let has_synonym = self.synonyms.iter().any(|syn| lower.contains(syn.to_lowercase().as_str()));
-
-        // Check ratio
-        let has_ratio = self.regex
-            .iter()
-            .any(|regex| regex.is_match(&lower));
+    pub fn detect_rss_potential(&self, filing_text: &Vec<String>) -> RssPresence {
+        let mut has_synonym = false;
+        let mut has_ratio = false;
+        
+        for text in filing_text {
+            let lower = text.to_lowercase();
+            if self.synonyms.iter().any(|syn| lower.contains(syn.to_lowercase().as_str())) {
+                has_synonym = true;
+            }
+            if self.regex.iter().any(|regex| regex.is_match(&lower)) {
+                has_ratio = true;
+            }
+            // If both are true, we can break early
+            if has_synonym && has_ratio {
+                break;
+            }
+        }
 
         // Decide
         RssPresence(has_synonym || has_ratio, has_synonym, has_ratio)
@@ -156,8 +162,11 @@ Date: January 10, 2025	By:	/s/ Christian Kanstrup
  
  
         "#;
+
+        let mut container = Vec::<String>::new();
+        container.push(yap.parse().unwrap());
         
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap).0, true);
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(&container).0, true);
     }
     
     #[test]
@@ -180,7 +189,10 @@ Pursuant to the terms of the Agreement, the Company agreed to pay the Placement 
  
 The representations, warranties and covenants contained in the Agreement were made solely for the benefit of the parties to the Agreement. In addition, such representations, warranties and covenants (i) are intended as a way of allocating the risk between the parties to the Agreement and not as statements of fact, and (ii) may apply standards of materiality in a way that is different from what may be viewed as material by stockholders of, or other investors in, the Company. Moreover, information concerning the subject matter of the representations and warranties may change after the date of the Agreement, which subsequent information may or may not be fully reflected in public disclosures."#;
 
-        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(yap).0, true);
+        let mut container = Vec::<String>::new();
+        container.push(yap.parse().unwrap());
+
+        assert_eq!(RSSPhaseOneDetector::new().detect_rss_potential(&container).0, true);
     }
     
     

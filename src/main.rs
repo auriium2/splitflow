@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
 use tracing::{info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -97,8 +98,9 @@ async fn main() -> anyhow::Result<()> {
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
         .enable_tracing()
+        .rate_limit(1, Duration::from_secs(5))
         .layer(LoadShedLayer::new())
-        .rate_limit(1, Duration::from_secs(10))
+        .layer(ConcurrencyLimitLayer::new(1))
         .data(core.clone())
         .data(client.http.clone())
         .backend(CronStream::new(Schedule::from_str("1/1 * * * * *")?))

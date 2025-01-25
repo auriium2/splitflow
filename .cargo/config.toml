@@ -4,14 +4,11 @@ rustflags = [
     "-C", "link-args=-Wl,-rpath,/Library/Developer/CommandLineTools/Library/Frameworks",
 ]
 
-
-
 [target.x86_64-apple-darwin]
 rustflags = [
     "-C", "link-arg=-undefined",
     "-C", "link-arg=dynamic_lookup",
 ]
-
 [target.aarch64-apple-darwin]
 rustflags = [
     "-C", "link-arg=-undefined",
@@ -19,9 +16,6 @@ rustflags = [
     "-C", "link-arg=-mmacosx-version-min=11.0"
 
 ]
-
-
-
 [env]
 MACOSX_DEPLOYMENT_TARGET = "11.0"
 #PYO3_PYTHON="/opt/homebrew/bin/python3"

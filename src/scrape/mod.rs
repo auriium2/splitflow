@@ -152,7 +152,6 @@ impl RssContext {
         let unseen_uuids = stream::iter(feed_urls)
             .filter_map(|mut individual_entry| async move {
                 let id_copy = individual_entry.id;
-                info!("{}", id_copy.clone());
                 let out = self.core.db.get_filing_document(&id_copy).await;
 
                 //TODO this is a problem, if the db throws db errors we just swallow them
@@ -214,7 +213,6 @@ impl RssContext {
                                 hub_counter.load(Ordering::Relaxed),
                                 max_progress
                             );
-                            info!("{}", &g);
                             status_reports.push(g);
                             sleep(Duration::from_secs(3)).await;
                         }
@@ -241,6 +239,8 @@ impl RssContext {
 
     #[instrument(skip(self))]
     async fn scan(&self) -> Result<()> {
+        info!("scanning");
+
         let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
         let status = status6k.is_success() && status8k.is_success();
         if !status {
@@ -362,7 +362,7 @@ async fn fetch_body_bulk(
 }
 
 #[instrument(skip_all, parent = &tracing::Span::current())]
-async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body, RssPresence)>> {
+async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Vec<Body>, RssPresence)>> {
     let contents = tokio::task::spawn_blocking(move || {
         let detector = Arc::new(RSSPhaseOneDetector::new());
 
@@ -374,7 +374,7 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Body,
                 let g = active_span.enter();
 
                 let filtered_body = preprocess_deep_body(body.1).expect("oops");
-                let ae = detector.detect_rss_potential(filtered_body.as_str());
+                let ae = detector.detect_rss_potential(&filtered_body);
 
                 drop(g);
                 return (body.0, filtered_body, ae);
@@ -459,7 +459,7 @@ async fn extract_deep_link_from_intermediary_body(body: String) -> Result<String
 }
 
 #[instrument(skip_all)]
-fn preprocess_deep_body(html: String) -> Result<String> {
+fn preprocess_deep_body(html: String) -> Result<Vec<String>> {
     #[derive(Error,Debug)]
     enum PreprocessError {
         #[error("somehow, the body of the final txt file is not present!")]
@@ -468,21 +468,23 @@ fn preprocess_deep_body(html: String) -> Result<String> {
         GenericError(anyhow::Error)
     }
     
-    let html_blocks: Vec<&str> = extract_html_blocks(&*html);
+    let mut storage: Vec<String> = Vec::new();
+    for bk in extract_html_blocks(&*html) {
+        let body_safe = Html::parse_document(bk)
+            .select(&*BODY_SELECTOR)
+            .next()
+            .ok_or(PreprocessError::NoBodyError)?
+            .text()
+            .map(|text| text.trim())
+            .filter(|trimmed_text| !trimmed_text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        
+        storage.push(body_safe);
+    }
     
-    let body_safe = Html::parse_document(&html)
-        .select(&*BODY_SELECTOR)
-        .next()
-        .ok_or(PreprocessError::NoBodyError)?
-        .text()
-        .map(|text| text.trim())
-        .filter(|trimmed_text| !trimmed_text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
     
-    
-    
-    Ok(body_safe)
+    Ok(storage )
 }
 
 fn extract_html_blocks(input: &str) -> Vec<&str> {
@@ -553,6 +555,7 @@ mod tests {
 
         let result = preprocess_deep_body(contents);
         println!("{:?}", result);
+        
     }
 
 }

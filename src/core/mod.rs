@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 pub mod database;
 
 // CONFIG STUFF
-const APP_NAME: &str = "strider";
+const APP_NAME: &str = "splitflow";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StriderConfig {

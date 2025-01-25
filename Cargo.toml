@@ -8,9 +8,7 @@ confy = "0.6.1"
 poise = { version = "0.6.1", features = ["default"] }
 serenity = { version = "0.12.4", features = ["default"] }
 tokio = { version = "1.43.0", features = ["full", "tracing"] }
-env_logger = { version = "0.11.6", features = ["default"] }
 chrono = { version = "0.4.39", features = [ "serde"]}
-chrono-tz = "0.10.0"
 reqwest = { version = "0.12.12", features = ["default", "json", "socks"] }
 sys-info = "0.9.1"
 image = "0.25.5"
@@ -36,29 +34,27 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.18"
 tracing-timing = "0.6.0"
 venator = "1.0.0"
-pyo3 = { version = "0.23.4" }
 apalis = { version = "0.6.4", features = ["limit"] }
 apalis-redis = "0.6.4"
 email_address = "0.2.9"
 apalis-cron = "0.6.4"
-thiserror = "1.0.29"
+thiserror = "2.0.11"
 tower = { version = "0.5.2", features = ["load-shed"] }
 lazy_static = "1.5.0"
 async-trait = "0.1.85"
-pyo3-build-config = "0.23.4"
+
 
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
 
-[build-dependencies]
-pyo3-build-config = "0.23.4"
+
 [profile.release]
-opt-level = "z"        # Best for runtime performance with less emphasis on compile time
-lto = "fat"            # Enables Link Time Optimization for better performance
-codegen-units = 1      # Forces a single codegen unit to improve optimization (at the cost of slower compilation)
-debug = false          # Disable debug information for better performance
-panic = "abort"        # Use `abort` to avoid stack unwinding, reducing binary overhead
-#incremental = false    # Disable incremental compilation for consistent, fully optimized builds
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+debug = false
+panic = "abort"
+#incremental = false
 
 [alias]
 # Build the release binary

@@ -52,18 +52,18 @@ impl<'a> LLMInference<'a> {
 }
 
 pub trait Inference {
-    async fn infer(&self, document_text: &str) -> anyhow::Result<InferenceOutput>;
+    async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput>;
 }
 
 impl Inference for LLMInference<'_> {
     
     #[instrument(skip_all)]
-    async fn infer(&self, document_text: &str) -> anyhow::Result<InferenceOutput> {
+    async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput> {
         let request_body = json!({
         "model": "gpt-4o-mini",
         "messages": [
             { "role": "system", "content": "You are an expert financial analyst." },
-            { "role": "user", "content": PROMPT.replace("{}", document_text) }
+            { "role": "user", "content": PROMPT.replace("{}", &document_text.join("\n")) }
         ]
     });
         let response = self.client

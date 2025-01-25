@@ -23,11 +23,11 @@ pub struct FilingDocument {
     pub post_inference: Option<InferenceOutput>,
 
     //mass data
-    pub body_contents: String,
+    pub body_contents: Vec<String>,
 }
 
 impl FilingDocument {
-    pub fn new(uuid: String, published: DateTime, is_split: RssPresence, post_inference: Option<InferenceOutput>, body_contents: String) -> Self {
+    pub fn new(uuid: String, published: DateTime, is_split: RssPresence, post_inference: Option<InferenceOutput>, body_contents: Vec<String>) -> Self {
         Self { uuid, published, is_split, post_inference, body_contents }
     }
 }

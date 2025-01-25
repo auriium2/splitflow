@@ -99,7 +99,7 @@ pub async fn deploy_generic(ctx: PoiseContext<'_>, id: String) -> DynNothing {
     let embed = CreateEmbed::new()
         .color(Colour::from_rgb(255, 120, 120))
         .title("STRIDER | LOADING...")
-        .description("This will get replaced by a strider dynamic billboard soon!")
+        .description("This will get replaced by a splitflow dynamic billboard soon!")
         .footer(CreateEmbedFooter::new("auriium software"))
         .timestamp(Timestamp::now());
     let message = ctx
