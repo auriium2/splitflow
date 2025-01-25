@@ -10,11 +10,11 @@ use rayon::prelude::*;
 
 use anyhow::Result;
 use apalis::prelude::Data;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, LAST_MODIFIED};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -34,6 +34,7 @@ use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::selectable::Selectable;
 use scraper::{Html, Selector};
 use thiserror::Error;
+use tokio::sync::Mutex;
 use crate::scrape::FetchBodyError::BadStatusError;
 
 pub enum RSSCommand {
@@ -68,9 +69,15 @@ const SEC_8K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcu
 #[derive(Serialize, Deserialize)]
 pub struct RSSTask {}
 
-struct RssContext {
-    core: Data<Arc<Core>>,
+#[derive(Clone)]
+pub struct RSSService {
+    core: Arc<Core>,
+    
+    last_6k: Arc<Mutex<DateTime<Utc>>>,
+    last_8k: Arc<Mutex<DateTime<Utc>>>,
 }
+
+
 
 #[derive(Error, Debug)]
 enum ScraperError {
@@ -83,25 +90,56 @@ struct UUIDAndLink {
     link: String,
 }
 
+#[instrument(skip(core))]
 pub async fn run_rss(
     _task: PerfmonTask,
-    core: Data<Arc<Core>>,
+    core: Data<RSSService>,
     //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
 ) -> std::result::Result<(), PerfmonError> {
+    
     trace!("running rss task");
-
-    RssContext {
-        core,
-    }
-        .scan()
-        .await?;
-
+    core.scan().await?;
     trace!("done!");
 
     Ok(())
 }
 
-impl RssContext {
+impl RSSService {
+/*
+    async fn check_ready(&self) -> Result<bool> {
+        let headers = spoof::generate_headers();
+        let (response6k, response8k) = join!(
+            self.core.client.head(SEC_6K_LINK).headers(headers.clone()).send(),
+            self.core.client.head(SEC_8K_LINK).headers(headers).send()
+        );
+        let response6k = response6k?;
+        let response8k = response8k?;
+        
+        info!("{:#?}",response8k.headers());
+
+        let last_modified_6k = response6k.headers().get(LAST_MODIFIED)
+            .ok_or_else(|| anyhow::anyhow!(LAST_MODIFIED))?
+            .to_str()?
+            .parse::<DateTime<Utc>>()?;
+        let last_modified_8k = response8k.headers().get("last-modified")
+            .ok_or_else(|| anyhow::anyhow!("Missing last-modified header for 8-K"))?
+            .to_str()?
+            .parse::<DateTime<Utc>>()?;
+
+        let is_new_content_6k = last_modified_6k > *self.last_6k.lock().await;
+        let is_new_content_8k = last_modified_8k > *self.last_8k.lock().await;
+
+        // Update stored last modified dates if new content is found
+        if is_new_content_6k {
+            *self.last_6k.lock().await = last_modified_6k;
+        }
+        if is_new_content_8k {
+            *self.last_8k.lock().await = last_modified_8k;
+        }
+
+        Ok(is_new_content_6k || is_new_content_8k)
+    }
+    */
     #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
         let headers = spoof::generate_headers();
@@ -291,8 +329,15 @@ impl RssContext {
 
     #[instrument(skip(self))]
     async fn scan(&self) -> Result<()> {
-        info!("scanning");
+/*
+        info!("checking ready");
+        if !self.check_ready().await? {
+            info!("no new content since we last peeked");
+            return Ok(());
+        }*/
 
+
+        info!("new content, scanning");
         let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
         let status = status6k.is_success() && status8k.is_success();
         if !status {
@@ -380,6 +425,15 @@ impl RssContext {
 
         Ok(())
     }
+
+    pub fn new(core: Arc<Core>) -> Self {
+        Self {
+            core,
+            last_6k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
+            last_8k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))
+        }
+    }
+    
 }
 
 #[derive(Debug, Error)]
@@ -587,8 +641,10 @@ mod tests {
     #[tokio::test]
     async fn test_visit_intermediaries() {
         let core = Arc::new(load_data().await.expect("oops"));
-        let context = RssContext {
-            core: Data::new(core.clone()),
+        let context = RSSService {
+            core: core.clone(),
+            last_6k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
+            last_8k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
         };
 
         let headers = generate_headers();

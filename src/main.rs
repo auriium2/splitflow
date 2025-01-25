@@ -4,7 +4,7 @@ extern crate pretty_env_logger;
 
 use crate::billboard::perfmon::*;
 use crate::billboard::deploy;
-use crate::scrape::run_rss;
+use crate::scrape::{run_rss, RSSService};
 use apalis::prelude::{Monitor, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
 use apalis_cron::{CronStream, Schedule};
 use core::Core;
@@ -99,15 +99,18 @@ async fn main() -> anyhow::Result<()> {
         .backend(CronStream::new(Schedule::from_str("1/7 * * * * *")?))
         .build_fn(run_perfmon);
 
+    let rss_service = RSSService::new(core.clone());
+    
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
         .enable_tracing()
         .layer(LoadShedLayer::new())
         .layer(ConcurrencyLimitLayer::new(1))
-        .data(core.clone())
-        .data(client.http.clone())
-        .backend(CronStream::new(Schedule::from_str("0 */1 * * * *")?))
+        .data(rss_service)
+        .backend(CronStream::new(Schedule::from_str("0 */20 * * * *")?))
         .build_fn(run_rss);
+    
+    
 
     //discord processors
 

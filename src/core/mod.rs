@@ -105,6 +105,7 @@ mod tests {
 
         let client = reqwest::Client::builder()
             .proxy(Proxy::all(proxy_url)?)
+            .gzip(true)  // Enables automatic decompression
             .build()?;
 
         let response = client
