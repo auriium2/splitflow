@@ -5,7 +5,8 @@ extern crate pretty_env_logger;
 use crate::billboard::perfmon::*;
 use crate::billboard::deploy;
 use crate::scrape::{run_rss, RSSService};
-use apalis::prelude::{Monitor, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
+use tower::retry::{RetryLayer};
+use apalis::prelude::{MemoryStorage, Monitor, Storage, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
 use apalis_cron::{CronStream, Schedule};
 use core::Core;
 use poise::{serenity_prelude as serenity, Framework};
@@ -17,21 +18,25 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use apalis::layers::tracing::OnFailure;
+use apalis_redis::RedisStorage;
 use tokio::sync::mpsc::{channel, Sender};
 use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
+use tower::retry::backoff::{ExponentialBackoff, ExponentialBackoffMaker};
 use tracing::{info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{prelude::*, registry::Registry};
 use tracing_subscriber::EnvFilter;
 use venator::Venator;
-
+use crate::buysell::BuyTask;
+use crate::discord2::{DiscordService, DiscordTask};
 
 mod billboard;
 mod buysell;
 mod core;
 mod logging;
 mod scrape;
+mod discord2;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -89,6 +94,31 @@ async fn main() -> anyhow::Result<()> {
     //ready_rx.recv().await;
     info!("loaded discord..");
 
+    let redis_url = core.cfg.redis_url.clone();
+    let conn = tokio::time::timeout(Duration::from_secs(5), apalis_redis::connect(redis_url))
+        .await
+        .expect("Connection timed out")
+        .expect("Could not connect");
+
+    info!("loaded redis..");
+
+
+    //discord service (we can set up subuser messaging through this later)
+    let discord_service: DiscordService = DiscordService::new(client.http.clone(), core.cfg.announcement_channel.clone());
+    let discord_queue: MemoryStorage<DiscordTask> = MemoryStorage::new();
+    let announcement_worker = WorkerBuilder::new("discord_announcements")
+        .concurrency(2)
+        .data(discord_service)
+        .backend(discord_queue.clone())
+        .build_fn(discord2::process_task);
+
+    info!("loaded discord worker..");
+
+    //buy service
+    let buy_queue: RedisStorage<BuyTask> = RedisStorage::new(conn);
+
+    
+
     //performance monitor
     let perfmon_worker = WorkerBuilder::new("perfmon")
         .enable_tracing()
@@ -99,8 +129,8 @@ async fn main() -> anyhow::Result<()> {
         .backend(CronStream::new(Schedule::from_str("1/7 * * * * *")?))
         .build_fn(run_perfmon);
 
-    let rss_service = RSSService::new(core.clone());
-    
+    let rss_service = RSSService::new(core.clone(), buy_queue, discord_queue);
+
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
         .enable_tracing()
@@ -109,16 +139,15 @@ async fn main() -> anyhow::Result<()> {
         .data(rss_service)
         .backend(CronStream::new(Schedule::from_str("0 */20 * * * *")?))
         .build_fn(run_rss);
-    
-    
 
+
+    
     //discord processors
-
-
     let discord_future = client.start();
     let monitor_future = Monitor::new()
         .register(rss_worker)
         .register(perfmon_worker)
+        .register(announcement_worker)
         .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
 

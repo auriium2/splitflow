@@ -9,7 +9,7 @@ use std::result;
 use rayon::prelude::*;
 
 use anyhow::Result;
-use apalis::prelude::Data;
+use apalis::prelude::{Data, MemoryStorage, MessageQueue, Storage};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use futures::{stream, StreamExt};
@@ -20,10 +20,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use apalis_redis::RedisStorage;
 use tokio::time::sleep;
 use tokio::{join, sync};
 use tracing::{error, info, trace, warn};
 use tracing::instrument;
+use tokio::sync::RwLock;
 
 use crate::core::{Body, Core, Link, UUID};
 
@@ -33,8 +35,11 @@ use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::selectable::Selectable;
 use scraper::{Html, Selector};
+use serenity::all::Colour;
 use thiserror::Error;
 use tokio::sync::Mutex;
+use crate::buysell::{Action, BuyService, BuyTask};
+use crate::discord2::{DiscordTask, Source, Where};
 use crate::scrape::FetchBodyError::BadStatusError;
 
 pub enum RSSCommand {
@@ -72,9 +77,11 @@ pub struct RSSTask {}
 #[derive(Clone)]
 pub struct RSSService {
     core: Arc<Core>,
+    buy_queue: Arc<RwLock<RedisStorage<BuyTask>>>,
+    discord_queue: Arc<RwLock<MemoryStorage<DiscordTask>>>,
     
-    last_6k: Arc<Mutex<DateTime<Utc>>>,
-    last_8k: Arc<Mutex<DateTime<Utc>>>,
+    last_6k: Arc<RwLock<DateTime<Utc>>>,
+    last_8k: Arc<RwLock<DateTime<Utc>>>,
 }
 
 
@@ -105,41 +112,6 @@ pub async fn run_rss(
 }
 
 impl RSSService {
-/*
-    async fn check_ready(&self) -> Result<bool> {
-        let headers = spoof::generate_headers();
-        let (response6k, response8k) = join!(
-            self.core.client.head(SEC_6K_LINK).headers(headers.clone()).send(),
-            self.core.client.head(SEC_8K_LINK).headers(headers).send()
-        );
-        let response6k = response6k?;
-        let response8k = response8k?;
-        
-        info!("{:#?}",response8k.headers());
-
-        let last_modified_6k = response6k.headers().get(LAST_MODIFIED)
-            .ok_or_else(|| anyhow::anyhow!(LAST_MODIFIED))?
-            .to_str()?
-            .parse::<DateTime<Utc>>()?;
-        let last_modified_8k = response8k.headers().get("last-modified")
-            .ok_or_else(|| anyhow::anyhow!("Missing last-modified header for 8-K"))?
-            .to_str()?
-            .parse::<DateTime<Utc>>()?;
-
-        let is_new_content_6k = last_modified_6k > *self.last_6k.lock().await;
-        let is_new_content_8k = last_modified_8k > *self.last_8k.lock().await;
-
-        // Update stored last modified dates if new content is found
-        if is_new_content_6k {
-            *self.last_6k.lock().await = last_modified_6k;
-        }
-        if is_new_content_8k {
-            *self.last_8k.lock().await = last_modified_8k;
-        }
-
-        Ok(is_new_content_6k || is_new_content_8k)
-    }
-    */
     #[instrument(skip(self))]
     async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
         let headers = spoof::generate_headers();
@@ -401,9 +373,23 @@ impl RSSService {
         self.core.db.push_filing_documents(all_filings).await?;
 
         info!("candidate count: {}", key_documents.len());
-        let mut split = 0;
+        if key_documents.len() < 1 {
+            info!("no candidates detected, sleeping...");
+            return Ok(())
+        }
+        
+        {
+            let mut discord_queue = self.discord_queue.write().await;
+            discord_queue.enqueue(DiscordTask::new(
+                Source::Scanner,
+                Where::Announcements,
+                format!("Splitflow has detected {} potential stock splits", key_documents.len()),
+                Colour::DARK_GREEN
+            )).await.map_err(|_| anyhow::anyhow!("Failed to enqueue DiscordTask"))?;
+        }
 
         info!("running inference");
+        let mut split = 0;
         let inference = LLMInference::new(&self.core.client, &self.core.cfg.gpt_key);
 
         for document in key_documents.iter_mut() {
@@ -416,21 +402,57 @@ impl RSSService {
             document.post_inference = Some(inference_data);
         }
 
-        info!("pushing inferred filings to db");
-        for document in key_documents.into_iter() {
-            self.core.db.update_filing_document(document).await?;
+        info!("real split count: {}", split);
+        if split < 1 {
+            info!("no candidates detected, sleeping...");
+            return Ok(())
         }
 
-        info!("real split count: {}", split);
-
+        info!("pushing inferred filings to db");
+        for document in key_documents.into_iter() {
+            
+            
+            if let Some(inference) = &document.post_inference {
+                if inference.classification == Classification::RoundUp {
+                    info!("stock {} has ROUND_UP on date {:#?}!", inference.ticker, inference.ex_date);
+                    {
+                        let mut discord_queue = self.discord_queue.write().await;
+                        discord_queue.enqueue(DiscordTask::new(
+                            Source::Scanner,
+                            Where::Announcements,
+                            format!("Splitflow has detected a stock split for stock {}. It is estimated to occur at the date {:?}", inference.ticker, inference.ex_date),
+                            Colour::DARK_GREEN
+                        )).await.map_err(|_| anyhow::anyhow!("Failed to enqueue DiscordTask"))?;
+                    }
+                    
+                    {
+                        let mut buy_queue = self.buy_queue.write().await;
+                        buy_queue.schedule(
+                            BuyTask::new(Action::Buy, inference.ticker.clone()),
+                            inference.ex_date.unwrap().timestamp()
+                        ).await?;
+                    }
+                } else {
+                    info!("stock {} has {:#?}!", inference.ticker, inference.classification);
+                }
+            } else {
+                info!("inference failed on an inference doc somehow");
+            }
+            //send the documents to the storage
+            self.core.db.update_filing_document(document).await?;
+        }
+        
         Ok(())
     }
+    
 
-    pub fn new(core: Arc<Core>) -> Self {
+    pub fn new(core: Arc<Core>, buy_queue: RedisStorage<BuyTask>, discord_queue: MemoryStorage<DiscordTask>) -> Self {
         Self {
             core,
-            last_6k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
-            last_8k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))
+            buy_queue: Arc::new(RwLock::new(buy_queue)),
+            discord_queue: Arc::new(RwLock::new(discord_queue)),
+            last_6k: Arc::new(RwLock::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
+            last_8k: Arc::new(RwLock::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))
         }
     }
     
@@ -640,12 +662,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_visit_intermediaries() {
+        let redis_url = std::env::var("REDIS_URL").expect("Missing env variable REDIS_URL");
+        let conn = apalis_redis::connect(redis_url)
+            .await
+            .expect("Could not connect");
+        let storage = RedisStorage::new(conn);
+        //TODO: can we mock this instead? this code is so... not mockable
+
         let core = Arc::new(load_data().await.expect("oops"));
-        let context = RSSService {
-            core: core.clone(),
-            last_6k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
-            last_8k: Arc::new(Mutex::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
-        };
+        
+        
+        let context = RSSService::new(core, storage, Default::default());
+        
 
         let headers = generate_headers();
         let unseen_ids = vec![ //TODO iXBRL is a nuisance that i must sort out

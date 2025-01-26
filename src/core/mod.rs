@@ -14,6 +14,8 @@ const APP_NAME: &str = "splitflow";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StriderConfig {
+    pub redis_url: String,
+    pub announcement_channel: String,
     pub discord_token: String,
     pub mongo_user: String,
     pub mongo_password: String,
@@ -26,6 +28,8 @@ impl Default for StriderConfig {
     fn default() -> Self {
         //TODO: remove these before we publish to the funny quantjob portfolio
         StriderConfig {
+            redis_url: "redis://redis:6379".to_string(),
+            announcement_channel: "1332886621804036107".to_string(),
             discord_token: "MTI5NDQ2MDM3NzQ5NjU1NTU3MQ.Gn0pt_.rVieVlz58vTxDUU7gT1AaxKlFVOUnsF_cJBn8g".to_string(),
             mongo_user: "admin".to_string(),
             mongo_password: "DHOeETe48VOOg4WN".to_string(),
@@ -48,9 +52,9 @@ pub struct Core {
 
 #[instrument]
 pub async fn load_data() -> anyhow::Result<Core> {
-    let path = confy::get_configuration_file_path(APP_NAME, "config")?;
+    let path = std::path::Path::new("config/splitflow_config.toml");
     info!("The configuration file path is: {:#?}", path);
-    let cfg: StriderConfig = confy::load(APP_NAME, None)?;
+    let cfg: StriderConfig = confy::load_path(path)?;
 
     let client = Client::with_uri_str(format!(
         "mongodb+srv://admin:{}@cluster0.5ihgc.mongodb.net/",
