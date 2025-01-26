@@ -131,13 +131,16 @@ async fn main() -> anyhow::Result<()> {
 
     let rss_service = RSSService::new(core.clone(), buy_queue, discord_queue);
 
+    //let rss_cron = "0 */20 * * * *";
+    let rss_cron = "0/20 * * * * *";
+
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
         .enable_tracing()
         .layer(LoadShedLayer::new())
         .layer(ConcurrencyLimitLayer::new(1))
         .data(rss_service)
-        .backend(CronStream::new(Schedule::from_str("0 */20 * * * *")?))
+        .backend(CronStream::new(Schedule::from_str(rss_cron)?))
         .build_fn(run_rss);
 
 

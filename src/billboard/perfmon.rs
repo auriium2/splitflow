@@ -70,7 +70,7 @@ fn offline_embed() -> CreateEmbed {
     let c: Colour = Colour::from_rgb(255,120,120);
     let embed = CreateEmbed::new()
         .color(c)
-        .title("SPLITFLOW | PERFMON")
+        .title("splitflow | perfmon")
         .description("The bot is currently offline. Please check back later.")
         .footer(CreateEmbedFooter::new("auriium software"))
         .timestamp(Timestamp::now());
@@ -86,7 +86,7 @@ fn running_embed() -> CreateEmbed {
     let c: Colour = Colour::from_rgb(120,255,120);
     let embed = CreateEmbed::new()
         .color(c)
-        .title("SPLITFLOW | PERFMON")
+        .title("splitflow | perfmon")
         .field("CPU Load Average", format!("{:.2}%", cpu_load.one * 10.0), false)
         .field(
             "Memory Usage",
