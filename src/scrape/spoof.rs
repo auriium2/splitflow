@@ -1,4 +1,4 @@
-use rand::prelude::SliceRandom;
+use rand::prelude::IndexedRandom;
 use reqwest::header;
 use reqwest::header::{HeaderMap, HeaderValue};
 

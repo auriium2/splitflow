@@ -1,4 +1,4 @@
-use crate::core::UUID;
+use crate::core::{SplitflowConfig, UUID};
 use crate::scrape::rss_inference::InferenceOutput;
 use crate::scrape::rss_presence::RssPresence;
 use anyhow::Result;
@@ -7,7 +7,10 @@ use mongodb::Collection;
 use quick_cache::sync::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::instrument;
+use std::time::Duration;
+use apalis_redis::ConnectionManager;
+use tokio::time::timeout;
+use tracing::{info, instrument};
 
 #[derive(Clone, Deserialize, Serialize, Debug, Hash, PartialEq, Eq)]
 pub struct FilingDocument {
@@ -25,7 +28,6 @@ pub struct FilingDocument {
     //mass data
     pub body_contents: Vec<String>,
 }
-
 impl FilingDocument {
     pub fn new(uuid: String, published: DateTime, is_split: RssPresence, post_inference: Option<InferenceOutput>, body_contents: Vec<String>) -> Self {
         Self { uuid, published, is_split, post_inference, body_contents }
@@ -38,14 +40,13 @@ pub struct SignpostDocument {
     pub channel_id: String,
     pub message_id: String
 }
-
-
 impl SignpostDocument {
     pub fn new(signpost_id: String, channel_id: String, message_id: String) -> Self {
         Self { signpost_id, channel_id, message_id }
     }
 }
 
+type OldID = u64;
 pub struct CoreDB {
     signpost_db: Collection<SignpostDocument>,
     filing_db: Collection<FilingDocument>,
@@ -54,18 +55,12 @@ pub struct CoreDB {
     //play collection
     //play cache
 }
-
-type OldID = u64;
 impl CoreDB {
-    
-    
-    
     pub async fn get_signpost(&self, signpost_id: String) -> Result<Option<SignpostDocument>> {
         let query = doc! { "signpost_id": signpost_id };
         let signpost = self.signpost_db.find_one(query.clone()).await?;
         Ok(signpost)
     }
-    
     
     pub async fn place_or_move_signpost(&self, new_signpost: SignpostDocument) -> Result<Option<SignpostDocument>> {
         let query = doc! { "signpost_id": &new_signpost.signpost_id };
@@ -117,8 +112,6 @@ impl CoreDB {
         Ok(())
     }
     
-    
-
     //TODO batched mode, right now we get documents from the db sequentially and dont make use of batching, which is slow and bad
     #[instrument(skip_all)]
     pub async fn get_filing_document(&self, uuid: &UUID) -> Result<Option<Arc<FilingDocument>>> {
@@ -150,4 +143,34 @@ impl CoreDB {
     }
 }
 
+#[instrument(skip_all)]
+pub async fn load_mongo_db(cfg: &SplitflowConfig) -> Result<CoreDB> {
+    let client = timeout(Duration::from_secs(5),mongodb::Client::with_uri_str(&cfg.mongo_url))
+        .await
+        .expect("Connection timed out")
+        .expect("Could not connect");
+    
+    let signpost_db = client
+        .database("splitflow")
+        .collection::<SignpostDocument>("signposts");
+    let filing_db = client
+        .database("splitflow")
+        .collection::<FilingDocument>("filings");
+    
+    let filing_cache: Cache<UUID, Option<Arc<FilingDocument>>> = Cache::new(300);
+    info!("connected to mongodb");
+    
+    Ok(CoreDB::new(signpost_db, filing_db, filing_cache))
+}
 
+#[instrument(skip_all)]
+pub async fn load_redis_conn(cfg: &SplitflowConfig) -> Result<ConnectionManager> {
+    let redis_url = cfg.redis_url.clone();
+    let conn = timeout(Duration::from_secs(5), apalis_redis::connect(redis_url))
+        .await
+        .expect("Connection timed out")
+        .expect("Could not connect");
+    
+    info!("connected to redis");
+    Ok(conn)
+}

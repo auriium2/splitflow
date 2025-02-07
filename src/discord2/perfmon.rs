@@ -1,13 +1,31 @@
-use crate::billboard::PERFMON_BB;
-use crate::core::Core;
-use apalis::prelude::{Context, Data, Worker};
-use chrono::DateTime;
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateEmbedFooter, EditMessage, Http, Timestamp};
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use apalis::prelude::{Context, Data, Worker};
+use tracing::{instrument, trace};
 use thiserror::Error;
-use tracing::{info, trace};
+use std::sync::Arc;
+use chrono::{DateTime, Utc};
+use crate::discord2::PERFMON_BB;
+use crate::core::database::CoreDB;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PerfmonTask {}
+
+#[derive(Clone)]
+pub struct PerfmonService{
+    db: Arc<CoreDB>,
+    discord: Arc<Http>
+}
+impl From<DateTime<Utc>> for PerfmonTask {
+    fn from(_value: DateTime<Utc>) -> Self {
+        PerfmonTask {}
+    }
+}
+impl PerfmonService {
+    pub fn new(db: Arc<CoreDB>, discord: Arc<Http>) -> Self {
+        Self { db, discord }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum PerfmonError {
@@ -24,20 +42,13 @@ pub enum PerfmonError {
     DataError(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PerfmonTask {}
 
-impl From<DateTime<Utc>> for PerfmonTask {
-    fn from(_value: DateTime<Utc>) -> Self {
-        PerfmonTask {}
-    }
-}
-
-pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Data<Arc<Http>>, worker: Worker<Context>) -> Result<(), PerfmonError> {
+#[instrument(skip_all)]
+pub async fn perfmon_task(_task: PerfmonTask, svc: Data<PerfmonService>, worker: Worker<Context>) -> Result<(), PerfmonError> {
     //info!("is_shutting_down: {}", worker.is_shutting_down());
     
     trace!("running perfmon task");
-    let opt = core.db.get_signpost(PERFMON_BB.to_string()).await?;
+    let opt = svc.db.get_signpost(PERFMON_BB.to_string()).await?;
     
     if let Some(contents) = opt {
         let old_channel = ChannelId::new(contents.channel_id.parse::<u64>()?);
@@ -49,22 +60,19 @@ pub async fn run_perfmon(_task: PerfmonTask, core: Data<Arc<Core>>, discord: Dat
             let embed = offline_embed();
             
             old_channel
-                .edit_message(&*discord, message_id, EditMessage::new().embed(embed))
+                .edit_message(&*svc.discord, message_id, EditMessage::new().embed(embed))
                 .await?;
             return Ok(());
         }
         
         old_channel
-            .edit_message(&*discord, message_id, EditMessage::new().embed(embed))
+            .edit_message(&*svc.discord, message_id, EditMessage::new().embed(embed))
             .await?;
     }
     
     Ok(())
    
 }
-
-
-
 
 fn offline_embed() -> CreateEmbed {
     let c: Colour = Colour::from_rgb(255,120,120);
@@ -78,7 +86,6 @@ fn offline_embed() -> CreateEmbed {
     embed
 
 }
-
 fn running_embed() -> CreateEmbed {
     let cpu_load = sys_info::loadavg().unwrap();
     let mem_use = sys_info::mem_info().unwrap();

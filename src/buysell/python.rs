@@ -1,77 +1,80 @@
-use crate::buysell::Purchaser;
-use async_trait::async_trait;
+use anyhow::bail;
 use reqwest::Client;
-use serde_json::json;
 
-use serde::Serialize;
+use crate::buysell::{Action, BuyTask};
+use serde::{Deserialize, Serialize};
 
-
-struct PythonPurchaser {
-    free_client: Client,
-    url: String,
-}
 
 #[derive(Serialize)]
 struct OrderRequest {
     action: String,
-    amount: f64,
+    amount: isize,
     stock: String,
     dry: bool,
 }
 
+#[derive(Deserialize)]
+struct OrderResponse {
+    logs: Vec<String>
+}
 
-#[async_trait]
-impl Purchaser for PythonPurchaser {
+#[derive(Clone)]
+pub struct PythonAllService {
+    unproxied_client: Client,
+    buyserver_url: String,
+}
 
-    async fn buy(&self, ticker: &str) -> anyhow::Result<()> {
-        let url = &self.url;
+impl PythonAllService {
+    pub fn new(unproxied_client: Client, buyserver_url: String) -> Self {
+        Self { unproxied_client, buyserver_url }
+    }
 
-        let order = OrderRequest {
-            action: "buy".to_string(),
-            amount: 10.0,
-            stock: ticker.to_string(),
-            dry: true,
-        };
+    pub(crate) async fn process(&self, task: &BuyTask) -> anyhow::Result<()> {
+        let action = match task.action {
+            Action::Buy => {"buy"}
+            Action::Sell => {"sell"}
+        }.to_string();
 
-        let response = self.free_client.post(url)
+        let ticker: String = task.ticker.clone();
+        let order = OrderRequest { action, amount: 1, stock: ticker, dry: true, };
+        let response = self.unproxied_client.post(&*self.buyserver_url)
             .json(&order)
             .send()
             .await?;
 
-        if response.status().is_success() {
-            let text = response.text().await?;
-            println!("{}", text);
-            Ok(())
-        } else {
-            anyhow::bail!("Failed to call API: {}", response.status());
-        }
+        if !response.status().is_success() { bail!("failed to call api, status {}", response.status())}
+
+        //let order_response: OrderResponse =  response.json::<OrderResponse>().await?;
+
+
+        Ok(())
     }
-
-
-
 }
+
 
 
 #[cfg(test)]
 mod tests {
-    use crate::buysell::python::PythonPurchaser;
-    use crate::buysell::Purchaser;
+    use crate::buysell::python::PythonAllService;
     use reqwest::Client;
 
-    use super::*;
+
     use httpmock::Method::POST;
     use httpmock::MockServer;
     use serde_json::json;
+    use crate::buysell::{Action, BuyTask};
 
     #[tokio::test]
-    async fn test_buy_real_server() {
+    async fn test_process_real_server() {
         // Create a PythonPurchaser instance with the real server URL
-        let purchaser = PythonPurchaser {
-            free_client: Client::new(),
-            url: "http://localhost:8080".to_string(),
+        let purchaser = PythonAllService {
+            unproxied_client: Client::new(),
+            buyserver_url: "http://localhost:8080".to_string(),
         };
-        // Call the buy method with a real ticker
-        let result = purchaser.buy("AAPL").await;
+        // Create a BuyTask instance
+        let task = BuyTask::new(Action::Buy, "AAPL".to_string());
+        // Call the process method with the task
+        let result = purchaser.process(&task).await;
 
         println!("{:?}", result);
         // Assert that the result is Ok
@@ -89,7 +92,7 @@ mod tests {
                 .path("/")
                 .json_body(json!({
                     "action": "buy",
-                    "amount": 10.0,
+                    "amount": 1,
                     "stock": "AAPL",
                     "dry": true
                 }));
@@ -97,13 +100,15 @@ mod tests {
         });
 
         // Create a PythonPurchaser instance with the mock server URL
-        let purchaser = PythonPurchaser {
-            free_client: Client::new(),
-            url: server.url("/"),
+        let purchaser = PythonAllService {
+            unproxied_client: Client::new(),
+            buyserver_url: server.url("/"),
         };
 
         // Call the buy method
-        let result = purchaser.buy("AAPL").await;
+        let task = BuyTask::new(Action::Buy, "AAPL".to_string());
+        // Call the process method with the task
+        let result = purchaser.process(&task).await;
         
         println!("{:?}", result);
 

@@ -172,8 +172,9 @@ impl Inference for LLMInference<'_> {
 
 mod tests {
     use dotenv::dotenv;
-    use super::*;
+    use reqwest::Client;
     use serde_json::json;
+    use crate::scrape::rss_inference::{Classification, Inference, InferenceOutput, LLMInference};
 
     #[tokio::test]
     async fn test_infer() {

@@ -1,60 +1,64 @@
-mod python;
+pub mod python;
 
-use async_trait::async_trait;
+use apalis::prelude::Data;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::oneshot;
+use tracing::info;
+use crate::buysell::python::PythonAllService;
 
 type Ticker = String;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Action {
     Buy,
     Sell
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug,Serialize, Deserialize)]
 pub struct BuyTask {
     action: Action,
-    ticker: String
+    ticker: String,
+    
+    
+    //message_id: u64, //TODO 
+    #[serde(skip)] notify: Option<oneshot::Sender<()>>
 }
-
 impl BuyTask {
     pub fn new(action: Action, ticker: String) -> Self {
-        Self { action, ticker }
+        Self { action, ticker, notify: None }
     }
-}
-
-pub struct BuyService {
-    purchasers: Vec<Box<dyn Purchaser>>
     
-    //TODO company mongo storage
-}
+    pub fn new_notify(action: Action, ticker: String) -> (Self, oneshot::Receiver<()>) {
+        let (tx,rx) = oneshot::channel::<()>();
 
-#[derive(Debug, Error)]
-enum BuyServiceError {
+        (Self { action, ticker, notify: Some(tx) }, rx)
+    }
     
-    #[error(transparent)]
-    GenericError(#[from] anyhow::Error)
-}
-
-#[async_trait]
-trait Purchaser {
-    async fn buy(&self, ticker: &str) -> anyhow::Result<()>;
-}
-
-#[async_trait]
-trait Seller {
-    async fn buy(&self, ticker: &str) -> anyhow::Result<()>;
-}
-
-
-impl BuyService {
-    async fn buy(&self, ticker: &str) -> Result<(),BuyServiceError> {
-        for x in &self.purchasers {
-            x.buy(ticker).await?;
+    pub async fn unreliable_done(self) -> anyhow::Result<()> {
+        if let Some(notify) = self.notify {
+            let _ = notify.send(());
+            
+            return Ok(());
         }
         
         Ok(())
     }
+}
+
+#[derive(Error, Debug)]
+pub enum BuyError {
+    #[error("oops!")]
+    DataError(),
+}
+
+
+pub async fn buy_task(task: BuyTask, data: Data<PythonAllService>) -> Result<(), BuyError> {
+    info!("executing {:#?}", task);
+    /*
+    svc.process(&task).await.expect("oops!");
+    task.unreliable_done().await.expect("oops!");
+*/
+    Ok(())
 }
 

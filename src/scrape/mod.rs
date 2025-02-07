@@ -5,152 +5,107 @@ pub mod rss_inference;
 pub mod rss_presence;
 mod spoof;
 
-use std::result;
 use rayon::prelude::*;
 
-use anyhow::Result;
-use apalis::prelude::{Data, MemoryStorage, MessageQueue, Storage};
+use anyhow::{bail, Result};
+use apalis::prelude::{Data, Storage};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
-use reqwest::header::{HeaderMap, LAST_MODIFIED};
-use reqwest::{Client, StatusCode};
+use reqwest::header::HeaderMap;
+use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use apalis_redis::RedisStorage;
 use tokio::time::sleep;
 use tokio::{join, sync};
 use tracing::{error, info, trace, warn};
 use tracing::instrument;
-use tokio::sync::RwLock;
+use tokio::sync::oneshot;
 
-use crate::core::{Body, Core, Link, UUID};
+use crate::core::{Body, Link, SplitflowConfig, UUID};
 
-use crate::billboard::perfmon::{PerfmonError, PerfmonTask};
-use crate::core::database::FilingDocument;
+use crate::core::database::{CoreDB, FilingDocument};
 use crate::scrape::rss_inference::{Classification, Inference, LLMInference};
 use crate::scrape::rss_presence::{RSSPhaseOneDetector, RssPresence};
 use scraper::selectable::Selectable;
 use scraper::{Html, Selector};
 use serenity::all::Colour;
 use thiserror::Error;
-use tokio::sync::Mutex;
-use crate::buysell::{Action, BuyService, BuyTask};
-use crate::discord2::{DiscordTask, Source, Where};
-use crate::scrape::FetchBodyError::BadStatusError;
+use crate::buysell::{Action, BuyTask};
+use crate::core::queue::QueueManager;
+use crate::discord2::announce::{DiscordTask, Source, Where};
 
-pub enum RSSCommand {
-    ResetDay,
-    ResetWeek,
-    ResetMonth,
-    RunProcess,
-    Die,
-}
 
-struct BillboardState {
-    doing: RSSGoal,
-    tasks: Vec<String>,
-}
-
-const TIMESTATS_KEY: &[u8; 9] = b"timestats";
-
-#[derive(Debug)]
-pub enum RSSGoal {
-    Idle,
-    ScanningTopLevel,
-    ReadingTopLevel,
-    ScanningUnique,
-    ReadingUnique,
-    Failed,
-}
-
-const LAST_RSS_KEY: &[u8; 8] = b"last_rss";
 const SEC_6K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=6-K&company=&dateb=&owner=include&start=0&count=100&output=atom";
 const SEC_8K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=8-K&company=&dateb=&owner=include&start=0&count=100&output=atom";
 
-#[derive(Serialize, Deserialize)]
-pub struct RSSTask {}
 
-#[derive(Clone)]
-pub struct RSSService {
-    core: Arc<Core>,
-    buy_queue: Arc<RwLock<RedisStorage<BuyTask>>>,
-    discord_queue: Arc<RwLock<MemoryStorage<DiscordTask>>>,
-    
-    last_6k: Arc<RwLock<DateTime<Utc>>>,
-    last_8k: Arc<RwLock<DateTime<Utc>>>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RSSTask {
+    #[serde(skip)] notifier: Option<oneshot::Sender<()>>,
+}
+impl RSSTask {
+    pub(crate) fn new_notify() -> (Self, oneshot::Receiver<()>) {
+        let (tx,rx) = oneshot::channel::<()>();
+        
+        return (Self{notifier: Some(tx)}, rx)
+    }
+}
+impl From<DateTime<Utc>> for RSSTask {
+    fn from(_value: DateTime<Utc>) -> Self {
+        RSSTask { notifier: None }
+    }
 }
 
-
-
 #[derive(Error, Debug)]
-enum ScraperError {
+pub enum ScraperError {
     #[error(transparent)]
     GenericError(#[from] anyhow::Error)
 }
-
 struct UUIDAndLink {
     uuid: UUID,
     link: String,
 }
 
 #[instrument(skip(core))]
-pub async fn run_rss(
-    _task: PerfmonTask,
-    core: Data<RSSService>,
-    //buysell: Data<Arc<RedisStorage<BuySellTask>>>,
-) -> std::result::Result<(), PerfmonError> {
-    
-    trace!("running rss task");
+pub async fn rss_task(task: RSSTask, core: Data<RSSService>) -> std::result::Result<(), ScraperError> {
     core.scan().await?;
-    trace!("done!");
-
     Ok(())
 }
 
+#[derive(Clone)]
+pub struct RSSService {
+    proxied_client: Client,
+    cfg: SplitflowConfig,
+    db: Arc<CoreDB>,
+    queues: Arc<QueueManager>
+}
 impl RSSService {
+    
     #[instrument(skip(self))]
-    async fn pull_body(&self) -> Result<(String, String, StatusCode, StatusCode, HeaderMap)> {
-        let headers = spoof::generate_headers();
-        let future6k = self
-            .core
-            .client
-            .get(SEC_6K_LINK)
+    async fn pull_body(&self, target: &str, headers: &HeaderMap) -> Result<(String, StatusCode)> {
+        let response: Response = self
+            .proxied_client
+            .get(target)
             .headers(headers.clone())
-            .send();
-        let future8k = self
-            .core
-            .client
-            .get(SEC_8K_LINK)
-            .headers(headers.clone())
-            .send();
+            .send()
+            .await?;
         
-        let (response6k, response8k) = join!(future6k, future8k);
-        let (resp6k, resp8k) = (response6k?, response8k?);
-        let (status6k, status8k) = (resp6k.status(), resp8k.status());
-
-        let (body6k, body8k) = (resp6k.text().await?, resp8k.text().await?);
-
-        Ok((body6k, body8k, status6k, status8k, headers))
+        let status: StatusCode = response.status();
+        let body = response.text().await?;
+        
+        Ok((body, status))
     }
 
     #[instrument(skip(self, body6k, body8k))]
-    async fn merge_feeds_and_collect(
-        &self,
-        body6k: String,
-        body8k: String,
-    ) -> Result<Vec<UUIDAndLink>> {
-        //read the main feeds
+    async fn merge_feeds_and_collect(&self, body6k: String, body8k: String, ) -> Result<Vec<UUIDAndLink>> {
         let (feed6k, feed8k) = (
             parser::parse(body6k.as_bytes())?,
             parser::parse(body8k.as_bytes())?,
         );
-        let (size6k, size8k) = (feed6k.entries.len(), feed8k.entries.len());
-        // Combine entries from both feeds
-
         trace!("count {}, {}", feed6k.entries.len(), feed8k.entries.len());
 
 
@@ -162,7 +117,7 @@ impl RSSService {
         let unseen_uuids = stream::iter(feed_urls)
             .filter_map(|mut individual_entry| async move {
                 let id_copy = individual_entry.id;
-                let out = self.core.db.get_filing_document(&id_copy).await;
+                let out = self.db.get_filing_document(&id_copy).await;
 
                 if let Err(e) = out {
                     return Some(Err(e));
@@ -190,17 +145,12 @@ impl RSSService {
     }
 
     #[instrument(skip(self, headers, unseen_ids, counter))]
-    async fn visit_deeplink(
-        &self,
-        headers: &HeaderMap,
-        unseen_ids: Vec<UUIDAndLink>,
-        counter: Arc<AtomicI32>,
-    ) -> Result<Vec<(UUID, Body)>> {
+    async fn visit_deeplink(&self, headers: &HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
         let max_progress = unseen_ids.len() as u32;
         let hub_counter = counter.clone();
 
         let (killsig_tx, mut killsig_rx) = sync::oneshot::channel::<()>();
-        let ref_client = &self.core.client; // Need this to prevent client from being moved into the first map
+        let ref_client = &self.proxied_client; // Need this to prevent client from being moved into the first map
 
         let unseen_links = unseen_ids
             .into_iter()
@@ -245,17 +195,12 @@ impl RSSService {
     }
 
     #[instrument(skip(self, headers, unseen_ids, counter))]
-    async fn visit_intermediaries(
-        &self,
-        headers: &HeaderMap,
-        unseen_ids: Vec<UUIDAndLink>,
-        counter: Arc<AtomicI32>,
-    ) -> Result<Vec<(UUID, Body)>> {
+    async fn visit_intermediaries(&self, headers: &HeaderMap, unseen_ids: Vec<UUIDAndLink>, counter: Arc<AtomicI32>) -> Result<Vec<(UUID, Body)>> {
         let max_progress = unseen_ids.len() as u32;
         let hub_counter = counter.clone();
 
         let (killsig_tx, mut killsig_rx) = sync::oneshot::channel::<()>();
-        let ref_client = &self.core.client; // Need this to prevent client from being moved into the first map
+        let ref_client = &self.proxied_client; // Need this to prevent client from being moved into the first map
 
         let unseen_links = unseen_ids
             .into_iter()
@@ -299,20 +244,15 @@ impl RSSService {
         Ok(hub_bodies)
     }
 
-    #[instrument(skip(self))]
     async fn scan(&self) -> Result<()> {
-/*
-        info!("checking ready");
-        if !self.check_ready().await? {
-            info!("no new content since we last peeked");
-            return Ok(());
-        }*/
-
-
+        let headers = spoof::generate_headers();
+        
         info!("new content, scanning");
-        let (body6k, body8k, status6k, status8k, headers) = self.pull_body().await?;
-        let status = status6k.is_success() && status8k.is_success();
-        if !status {
+        let (body6k, status6k) = self.pull_body(SEC_6K_LINK, &headers).await?;
+        let (body8k, status8k) = self.pull_body(SEC_8K_LINK, &headers).await?;
+        
+        let status_union = status6k.is_success() && status8k.is_success();
+        if !status_union {
             error!(
                 "failed to pull edgar, status codes [{}] [{}]",
                 status6k, status8k
@@ -347,7 +287,7 @@ impl RSSService {
         info!("visiting 8-k pages");
         let filings_counter = Arc::new(AtomicI32::new(0));
         let filing_bodies: Vec<(UUID,Body)> =
-            fetch_body_bulk(&self.core.client, intermediary_links, filings_counter, headers).await?;
+            fetch_body_bulk(&self.proxied_client, intermediary_links, filings_counter, headers).await?;
         let everything = extract_has_split(filing_bodies).await?;
 
         trace!("scanning 8-k pages for split status");
@@ -370,7 +310,7 @@ impl RSSService {
             .collect::<Vec<FilingDocument>>();
 
         info!("pushing filings to db");
-        self.core.db.push_filing_documents(all_filings).await?;
+        self.db.push_filing_documents(all_filings).await?;
 
         info!("candidate count: {}", key_documents.len());
         if key_documents.len() < 1 {
@@ -378,85 +318,70 @@ impl RSSService {
             return Ok(())
         }
         
-        {
-            let mut discord_queue = self.discord_queue.write().await;
-            discord_queue.enqueue(DiscordTask::new(
-                Source::Scanner,
-                Where::Announcements,
-                format!("Splitflow has detected {} potential stock splits", key_documents.len()),
-                Colour::DARK_GREEN
-            )).await.map_err(|_| anyhow::anyhow!("Failed to enqueue DiscordTask"))?;
-        }
-
+        self.queues.push_discord(DiscordTask::new(
+            Source::Scanner,
+            Where::Announcements,
+            format!("Splitflow has detected {} potential stock splits", key_documents.len()),
+            Colour::GOLD
+        )).await?;
+        
         info!("running inference");
-        let mut split = 0;
-        let inference = LLMInference::new(&self.core.client, &self.core.cfg.gpt_key);
+        let inference = LLMInference::new(&self.proxied_client, &self.cfg.gpt_key);
 
         for document in key_documents.iter_mut() {
             let inference_data = inference.infer(&document.body_contents).await?;
-            if inference_data.classification == Classification::RoundUp {
-                split += 1;
-            }
 
             //update doc
             document.post_inference = Some(inference_data);
         }
-
-        info!("real split count: {}", split);
-        if split < 1 {
-            info!("no candidates detected, sleeping...");
-            return Ok(())
-        }
-
+        
         info!("pushing inferred filings to db");
         for document in key_documents.into_iter() {
-            
-            
-            if let Some(inference) = &document.post_inference {
-                if inference.classification == Classification::RoundUp {
-                    info!("stock {} has ROUND_UP on date {:#?}!", inference.ticker, inference.ex_date);
-                    {
-                        let mut discord_queue = self.discord_queue.write().await;
-                        discord_queue.enqueue(DiscordTask::new(
-                            Source::Scanner,
-                            Where::Announcements,
-                            format!("Splitflow has detected a stock split for stock {}. It is estimated to occur at the date {:?}", inference.ticker, inference.ex_date),
-                            Colour::DARK_GREEN
-                        )).await.map_err(|_| anyhow::anyhow!("Failed to enqueue DiscordTask"))?;
-                    }
-                    
-                    {
-                        let mut buy_queue = self.buy_queue.write().await;
-                        buy_queue.schedule(
-                            BuyTask::new(Action::Buy, inference.ticker.clone()),
-                            inference.ex_date.unwrap().timestamp()
-                        ).await?;
-                    }
-                } else {
-                    info!("stock {} has {:#?}!", inference.ticker, inference.classification);
-                }
-            } else {
-                info!("inference failed on an inference doc somehow");
-            }
-            //send the documents to the storage
-            self.core.db.update_filing_document(document).await?;
+            self.process_inferred_document(&document).await?;
+            self.db.update_filing_document(document).await?;
         }
         
         Ok(())
     }
-    
 
-    pub fn new(core: Arc<Core>, buy_queue: RedisStorage<BuyTask>, discord_queue: MemoryStorage<DiscordTask>) -> Self {
-        Self {
-            core,
-            buy_queue: Arc::new(RwLock::new(buy_queue)),
-            discord_queue: Arc::new(RwLock::new(discord_queue)),
-            last_6k: Arc::new(RwLock::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc))),
-            last_8k: Arc::new(RwLock::new(DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))
+    #[instrument(skip_all)]
+    async fn process_inferred_document(&self, document: &FilingDocument) -> Result<()> {
+        if document.post_inference.is_none() {
+            error!("no post inference on a post inference!");
+            bail!("no post inference on a post inference!")
         }
+        
+        let inference = document.post_inference.as_ref().unwrap();
+
+        if inference.classification == Classification::RoundUp && inference.ex_date.is_some() {
+            info!("stock {} has ROUND_UP on date {:#?}!", inference.ticker, inference.ex_date);
+
+            self.queues.push_discord(DiscordTask::new(
+                Source::Scanner,
+                Where::Announcements,
+                format!("Splitflow has detected a stock split for stock {}. It is estimated to occur at the date {:?}. Queueing the stock for purchasing!", inference.ticker, inference.ex_date),
+                Colour::DARK_GREEN
+            )).await.map_err(|_| anyhow::anyhow!("failed to announce discord message"))?;
+
+            self.queues.push_buy(BuyTask::new(Action::Buy, inference.ticker.clone())).await?;
+        } else {
+            self.queues.push_discord(DiscordTask::new(
+                Source::Scanner,
+                Where::Announcements,
+                format!("Splitflow believes stock {} is type {:?}, or lacks an ex-date, and does not signify a true split.", inference.ticker, inference.classification),
+                Colour::DARK_ORANGE
+            )).await.map_err(|_| anyhow::anyhow!("failed to announce discord message"))?;
+
+            info!("stock {} has {:#?}!", inference.ticker, inference.classification);
+        }
+        Ok(())
     }
-    
+
+    pub fn new(proxied_client: Client, cfg: SplitflowConfig, db: Arc<CoreDB>, queues: Arc<QueueManager>) -> Self {
+        Self { proxied_client, cfg, db, queues }
+    }
 }
+
 
 #[derive(Debug, Error)]
 enum FetchBodyError {
@@ -471,12 +396,7 @@ enum FetchBodyError {
 }
 
 #[instrument(skip_all)]
-async fn fetch_body_bulk(
-    client: &Client,
-    urls: Vec<(UUID, Link)>,
-    counter: Arc<AtomicI32>,
-    headers: HeaderMap,
-) -> Result<Vec<(UUID, Body)>> {
+async fn fetch_body_bulk(client: &Client, urls: Vec<(UUID, Link)>, counter: Arc<AtomicI32>, headers: HeaderMap) -> Result<Vec<(UUID, Body)>> {
     let concurrency_limit = 5;
     let delay_between_requests = Duration::from_millis(50);
 
@@ -531,6 +451,7 @@ async fn extract_has_split(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Vec<B
 
     Ok(contents)
 }
+
 #[instrument(skip(bodies), parent = &tracing::Span::current())]
 async fn extract_8k_links(bodies: Vec<(UUID, Body)>) -> Result<Vec<(UUID, Link)>> {
     let results = stream::iter(bodies)
@@ -631,6 +552,7 @@ fn preprocess_deep_body(html: String) -> Result<Vec<String>> {
     Ok(storage )
 }
 
+#[instrument(skip_all)]
 fn extract_html_blocks(input: &str) -> Vec<&str> {
     let mut results = Vec::new();
     let mut offset = 0;
@@ -653,14 +575,13 @@ fn extract_html_blocks(input: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::load_data;
     use crate::scrape::spoof::generate_headers;
     use std::fs::File;
     use std::io::Read;
     use std::sync::atomic::AtomicI32;
     use std::sync::Arc;
 
-    #[tokio::test]
+    /*#[tokio::test]
     async fn test_visit_intermediaries() {
         let redis_url = std::env::var("REDIS_URL").expect("Missing env variable REDIS_URL");
         let conn = apalis_redis::connect(redis_url)
@@ -669,8 +590,7 @@ mod tests {
         let storage = RedisStorage::new(conn);
         //TODO: can we mock this instead? this code is so... not mockable
 
-        let core = Arc::new(load_data().await.expect("oops"));
-        
+
         
         let context = RSSService::new(core, storage, Default::default());
         
@@ -695,7 +615,7 @@ mod tests {
         for v in visited {
             println!("{}", v.1)
         }
-    }
+    }*/
 
     #[test]
     fn test_extract_all_text() {

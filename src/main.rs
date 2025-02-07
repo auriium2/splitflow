@@ -2,137 +2,97 @@
 
 extern crate pretty_env_logger;
 
-use crate::billboard::perfmon::*;
-use crate::billboard::deploy;
-use crate::scrape::{run_rss, RSSService};
-use tower::retry::{RetryLayer};
-use apalis::prelude::{MemoryStorage, Monitor, Storage, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn};
+use crate::buysell::python::PythonAllService;
+use crate::buysell::{buy_task, BuyTask};
+use crate::core::database::{load_mongo_db, load_redis_conn};
+use crate::core::load::{load_cfg, load_proxied_client, load_unproxied_client};
+use crate::core::queue::QueueManager;
+use crate::core::SplitflowConfig;
+use crate::discord2::load_discord;
+use crate::discord2::perfmon::PerfmonService;
+use crate::scrape::{rss_task, RSSService, RSSTask};
+use crate::util::MergedStorage;
+use apalis::prelude::{
+    MemoryStorage, Monitor, WorkerBuilder, WorkerBuilderExt, WorkerFactoryFn,
+};
 use apalis_cron::{CronStream, Schedule};
-use core::Core;
-use poise::{serenity_prelude as serenity, Framework};
-use serenity::all::{EventHandler, GuildId, RatelimitInfo};
-use serenity::async_trait;
-use std::error::Error;
+use apalis_redis::RedisStorage;
+use chrono::Utc;
+use discord2::announce;
+use discord2::announce::{DiscordService, DiscordTask};
+use discord2::perfmon::perfmon_task;
+use poise::serenity_prelude as serenity;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use apalis::layers::tracing::OnFailure;
-use apalis_redis::RedisStorage;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::try_join;
 use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
-use tower::retry::backoff::{ExponentialBackoff, ExponentialBackoffMaker};
 use tracing::{info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{prelude::*, registry::Registry};
 use tracing_subscriber::EnvFilter;
-use venator::Venator;
-use crate::buysell::BuyTask;
-use crate::discord2::{DiscordService, DiscordTask};
+use tracing_subscriber::{prelude::*, registry::Registry};
 
-mod billboard;
 mod buysell;
 mod core;
+mod discord2;
 mod logging;
 mod scrape;
-mod discord2;
+mod util;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    //LOGGING STUFF
-    let filter = EnvFilter::default()
-        .add_directive("splitflow=info".parse()?)
-        .add_directive("tokio=warn".parse()?)
-        .add_directive("tokio_cron_scheduler=trace".parse()?)
-        .add_directive("apalis=warn".parse()?)
-        .add_directive("serenity=warn".parse()?);
-    
+    load_logging()?;
 
-    let subscriber = Registry::default()
-        .with(Venator::default())
-        .with(filter)
-        .with(tracing_subscriber::fmt::Layer::default().compact());
+    //CORE STUFF
+    let cfg: SplitflowConfig = load_cfg().await?;
+    let (conn, proxied_client, unproxied_client, db) = try_join!(
+        load_redis_conn(&cfg),
+        load_proxied_client(&cfg),
+        load_unproxied_client(&cfg),
+        load_mongo_db(&cfg)
+    )?;
+    let db = Arc::new(db);
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting global default failed");
-    trace!("loaded logging");
+    //QUEUE STUFF
+    let rss_queue: MemoryStorage<RSSTask> = MemoryStorage::new();
+    let buy_queue: RedisStorage<BuyTask> = RedisStorage::new(conn);
+    let discord_queue: MemoryStorage<DiscordTask> = MemoryStorage::new();
+    let qm = Arc::new(QueueManager::new(
+        buy_queue.clone(),
+        discord_queue.clone(),
+        rss_queue.clone(),
+    ));
 
-    //MAIN DATABASE STUFF
-    let core = Arc::new(core::load_data().await?);
-    info!("loaded core");
+    let rss_cron = "1 */20 * * * *";
+    let rss_stream: CronStream<RSSTask, Utc> = CronStream::new(Schedule::from_str(rss_cron)?);
+    let merged_rss_queue = MergedStorage::<RSSTask>::new(rss_queue, rss_stream);
 
     //DISCORD STUFF
-    let (ready_tx, ready_rx) = channel::<u8>(1);
-    let token: String = { core.cfg.discord_token.clone() };
-    let intents = serenity::GatewayIntents::non_privileged()
-        | serenity::GatewayIntents::MESSAGE_CONTENT
-        | serenity::GatewayIntents::GUILD_MESSAGES
-        | serenity::GatewayIntents::GUILDS;
-
-    let framework_core = core.clone();
-    let framework = Framework::builder()
-        .options(poise::FrameworkOptions {
-            commands: vec![deploy()],
-            ..Default::default()
-        })
-        .setup(|ctx, _ready, framework| {
-            Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(framework_core)
-            })
-        })
-        .build();
-
-    let mut client = serenity::ClientBuilder::new(token, intents)
-        .framework(framework)
-        .event_handler(Handler {
-            is_loop_running: Default::default(),
-            sender: ready_tx,
-        })
-        .await?;
-
-    //ready_rx.recv().await;
-    info!("loaded discord..");
-
-    let redis_url = core.cfg.redis_url.clone();
-    let conn = tokio::time::timeout(Duration::from_secs(5), apalis_redis::connect(redis_url))
-        .await
-        .expect("Connection timed out")
-        .expect("Could not connect");
-
-    info!("loaded redis..");
-
+    let mut discord_client = load_discord(&cfg, qm.clone(), db.clone()).await?;
+    let discord_http = (&discord_client).http.clone();
 
     //discord service (we can set up subuser messaging through this later)
-    let discord_service: DiscordService = DiscordService::new(client.http.clone(), core.cfg.announcement_channel.clone());
-    let discord_queue: MemoryStorage<DiscordTask> = MemoryStorage::new();
+    let discord_service: DiscordService =
+        DiscordService::new(discord_http.clone(), &*cfg.announcement_channel);
     let announcement_worker = WorkerBuilder::new("discord_announcements")
         .concurrency(2)
         .data(discord_service)
-        .backend(discord_queue.clone())
-        .build_fn(discord2::process_task);
-
+        .backend(discord_queue)
+        .build_fn(announce::process_task);
     info!("loaded discord worker..");
 
-    //buy service
-    let buy_queue: RedisStorage<BuyTask> = RedisStorage::new(conn);
-
-    
-
     //performance monitor
+    let perfmon_service: PerfmonService = PerfmonService::new(db.clone(), discord_http.clone());
     let perfmon_worker = WorkerBuilder::new("perfmon")
         .enable_tracing()
         .layer(LoadShedLayer::new())
         .layer(ConcurrencyLimitLayer::new(1))
-        .data(core.clone())
-        .data(client.http.clone())
+        .data(perfmon_service)
         .backend(CronStream::new(Schedule::from_str("1/7 * * * * *")?))
-        .build_fn(run_perfmon);
+        .build_fn(perfmon_task);
 
-    let rss_service = RSSService::new(core.clone(), buy_queue, discord_queue);
-
-    //let rss_cron = "0 */20 * * * *";
-    let rss_cron = "0/20 * * * * *";
+    let rss_service = RSSService::new(proxied_client, cfg.clone(), db.clone(), qm.clone());
 
     //rss scraper
     let rss_worker = WorkerBuilder::new("scraper")
@@ -140,20 +100,26 @@ async fn main() -> anyhow::Result<()> {
         .layer(LoadShedLayer::new())
         .layer(ConcurrencyLimitLayer::new(1))
         .data(rss_service)
-        .backend(CronStream::new(Schedule::from_str(rss_cron)?))
-        .build_fn(run_rss);
+        .backend(merged_rss_queue)
+        .build_fn(rss_task);
 
+    //buy processor
+    let py_server_svc = PythonAllService::new(unproxied_client, cfg.buyserver_url.clone());
+    let buy_worker = WorkerBuilder::new("buysell")
+        .enable_tracing()
+        .data(py_server_svc)
+        .backend(buy_queue)
+        .build_fn(buy_task);
 
-    
     //discord processors
-    let discord_future = client.start();
+    let discord_future = discord_client.start();
     let monitor_future = Monitor::new()
+        .register(buy_worker)
         .register(rss_worker)
         .register(perfmon_worker)
         .register(announcement_worker)
         .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
-
 
     info!("assembled workers..");
 
@@ -165,41 +131,34 @@ async fn main() -> anyhow::Result<()> {
             info!("Received Ctrl+C, shutting down...");
         }
     };
-    
+
     tokio::time::sleep(Duration::from_secs(4)).await;
 
     info!("Shutting down...");
     Ok(())
 }
 
-struct Handler {
-    is_loop_running: AtomicBool,
-    sender: Sender<u8>,
+fn load_logging() -> anyhow::Result<()> {
+    let _guard = sentry::init(("https://fcd01658de95c45347b2f688b0be014f@o4508741150113792.ingest.us.sentry.io/4508741156077568", sentry::ClientOptions {
+        release: sentry::release_name!(),
+        traces_sample_rate: 1.0, //TODO lower this in prod
+        ..sentry::ClientOptions::default()
+    }));
+
+    //LOGGING STUFF
+    let filter = EnvFilter::default()
+        .add_directive("splitflow=info".parse()?)
+        .add_directive("tokio=warn".parse()?)
+        .add_directive("tokio_cron_scheduler=trace".parse()?)
+        .add_directive("apalis=warn".parse()?)
+        .add_directive("serenity=warn".parse()?);
+
+    let subscriber = Registry::default()
+        .with(sentry_tracing::layer())
+        .with(filter)
+        .with(tracing_subscriber::fmt::Layer::default().compact());
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting global default failed");
+    trace!("loaded logging");
+    Ok(())
 }
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn ratelimit(&self, data: RatelimitInfo) {
-        warn!(
-            "being ratelimited. limit: {} lm: {:?}, timeout: {}",
-            data.limit,
-            data.method,
-            data.timeout.as_secs()
-        )
-    }
-
-    async fn cache_ready(&self, _ctx: serenity::Context, _guilds: Vec<GuildId>) {
-        if !self.is_loop_running.load(Ordering::Relaxed) {
-            self.sender.send(1).await.expect("TODO: panic message");
-
-            self.is_loop_running.swap(true, Ordering::Relaxed);
-        }
-    }
-}
-
-pub type DynError = Box<dyn Error + Send + Sync>;
-pub type DynResult<T> = Result<T, DynError>;
-pub type DynNothing = DynResult<()>;
-pub type PoiseContext<'a> = poise::Context<'a, Arc<Core>, DynError>;
-
-const AURIIUM_NAME: &str = "auriium's software";

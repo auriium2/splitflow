@@ -6,6 +6,16 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+  mongodb:
+    image: "mongo:latest"
+    networks:
+      - app-network
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+    environment: #todo: .env
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: DHOeETe48VOOg4WN
   auto-rsa:
     container_name: auto-rsa
     build: ./splitflow-buy
@@ -19,3 +29,4 @@ services:
 networks:
   app-network:
     driver: bridge
+
