@@ -9,6 +9,8 @@ pub mod queue;
 
 // CONFIG STUFF
 pub const APP_NAME: &str = "splitflow";
+pub const APP_DEV: &str = "auriium softworks";
+
 
 // PUBLIC TYPES
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

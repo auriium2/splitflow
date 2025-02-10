@@ -4,7 +4,7 @@ use apalis::prelude::Data;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::oneshot;
-use tracing::info;
+use tracing::{info, instrument};
 use crate::buysell::python::PythonAllService;
 
 type Ticker = String;
@@ -53,12 +53,13 @@ pub enum BuyError {
 }
 
 
-pub async fn buy_task(task: BuyTask, data: Data<PythonAllService>) -> Result<(), BuyError> {
+#[instrument(skip_all)]
+pub async fn buy_task(task: BuyTask, svc: Data<PythonAllService>) -> Result<(), BuyError> {
     info!("executing {:#?}", task);
-    /*
+    
     svc.process(&task).await.expect("oops!");
     task.unreliable_done().await.expect("oops!");
-*/
+
     Ok(())
 }
 

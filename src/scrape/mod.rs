@@ -70,7 +70,7 @@ struct UUIDAndLink {
     link: String,
 }
 
-#[instrument(skip(core))]
+#[instrument(skip_all)]
 pub async fn rss_task(task: RSSTask, core: Data<RSSService>) -> std::result::Result<(), ScraperError> {
     core.scan().await?;
     Ok(())

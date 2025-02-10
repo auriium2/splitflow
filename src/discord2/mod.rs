@@ -18,6 +18,7 @@ use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{instrument, warn};
+use tracing::info;
 
 pub mod announce;
 pub(crate) mod perfmon;
@@ -33,67 +34,76 @@ type DiscordContext<'a> = poise::Context<'a, DiscordCore, anyhow::Error>;
 /*
    Discord Commands Here
 */
-#[poise::command(prefix_command, subcommands("buy", "pull"))]
-async fn force(_: DiscordContext<'_>) -> Result<()> {
+#[poise::command(prefix_command, slash_command, subcommands("buy", "pull", "sell"))]
+pub async fn force(_: DiscordContext<'_>) -> Result<()> {
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
-async fn buy(ctx: DiscordContext<'_>, ticker: String) -> Result<()> {
+pub async fn buy(ctx: DiscordContext<'_>, ticker: String) -> Result<()> {
+    buytask(ctx, &ticker, Action::Buy).await
+}
+#[poise::command(prefix_command, slash_command)]
+pub async fn sell(ctx: DiscordContext<'_>, ticker: String) -> Result<()> {
+    buytask(ctx, &ticker, Action::Buy).await
+}
+
+async fn buytask(ctx: DiscordContext<'_>, ticker: &String, action: Action) -> Result<()> {
     let real_ticker = Ticker::from_str(&ticker);
     if real_ticker.is_err() {
         ctx.send(command_bad(&format!(
             "err: {} is not a valid ticker",
             &ticker
         )))
-        .await?;
+            .await?;
         return Ok(());
     }
     let real_ticker = real_ticker.unwrap().0;
 
-    let (task, notifier) = BuyTask::new_notify(Action::Buy, real_ticker);
+    let (task, notifier) = BuyTask::new_notify(action, real_ticker);
     ctx.data().queues.push_buy(task).await?;
-    ctx.send(command_neutral(&format!(
+    let h = ctx.send(command_neutral(&format!(
         "sent buy request for ticker {}",
         &ticker
     )))
-    .await?;
+        .await?;
     let timeout_duration = std::time::Duration::from_secs(30);
     match tokio::time::timeout(timeout_duration, notifier).await {
         Ok(_) => {
-            ctx.send(command_good(&format!(
+            h.edit(ctx, command_good(&format!(
                 "successfully bought ticker {}",
                 &ticker
             )))
-            .await?;
+                .await?
         }
         Err(_) => {
-            ctx.send(command_mid(&format!(
+            h.edit(ctx, command_mid(&format!(
                 "timeout: buy request for ticker {} did not complete in time",
                 &ticker
             )))
-            .await?;
+                .await?;
         }
     }
-
+    
     Ok(())
 }
+
 #[poise::command(prefix_command, slash_command)]
-async fn pull(ctx: DiscordContext<'_>) -> Result<()> {
+pub async fn pull(ctx: DiscordContext<'_>) -> Result<()> {
     let (task, notifier) = RSSTask::new_notify();
     ctx.data()
         .queues
         .push_scan(task)
         .await
         .expect("impossible exception");
-    ctx.send(command_neutral("sent a rss request!")).await?;
+    let h = ctx.send(command_neutral("sent a rss request!")).await?;
     let timeout_duration = std::time::Duration::from_secs(120);
     match tokio::time::timeout(timeout_duration, notifier).await {
         Ok(_) => {
-            ctx.send(command_good("pull completed successfully!"))
+            h.edit(ctx, command_good("pull completed successfully!"))
                 .await?;
         }
         Err(_) => {
-            ctx.send(command_mid("timeout: pull didn't complete in time"))
+            h.edit(ctx, command_mid("timeout: pull didn't complete in time"))
                 .await?;
         }
     }
@@ -112,12 +122,12 @@ pub struct BillboardLocation {
     message_id: u64,
 }
 
-#[poise::command(prefix_command, subcommands("perfmon"))]
-async fn deploy(_: DiscordContext<'_>) -> Result<()> {
+#[poise::command(prefix_command, slash_command, subcommands("perfmon"))]
+pub async fn deploy(_: DiscordContext<'_>) -> Result<()> {
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
-async fn perfmon(ctx: DiscordContext<'_>) -> Result<()> {
+pub async fn perfmon(ctx: DiscordContext<'_>) -> Result<()> {
     deploy_generic(ctx, PERFMON_BB.to_string()).await
 }
 async fn deploy_generic(ctx: DiscordContext<'_>, id: String) -> Result<()> {
@@ -195,6 +205,8 @@ pub async fn load_discord(cfg: &SplitflowConfig, qm: Arc<QueueManager>, db: Arc<
         .framework(framework)
         .event_handler(Handler {})
         .await?;
+    
+    info!("discord preload complete");
 
     Ok(client)
 }

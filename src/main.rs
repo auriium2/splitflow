@@ -65,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let rss_cron = "1 */20 * * * *";
+    //let rss_cron = "40 * * * * *";
     let rss_stream: CronStream<RSSTask, Utc> = CronStream::new(Schedule::from_str(rss_cron)?);
     let merged_rss_queue = MergedStorage::<RSSTask>::new(rss_queue, rss_stream);
 
@@ -121,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
         .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
 
-    info!("assembled workers..");
+    info!("system OK");
 
     let jz = tokio::select! {
         _ = discord_future => {
