@@ -57,7 +57,10 @@ panic = "abort"
 #incremental = false
 
 [alias]
-# Build the release binary
 build-remote = "build --release"
 deploy = "!cargo build --release && scp target/release/your_binary user@remote-machine:/path/to/deploy"
 run-remote = "!cargo deploy && ssh user@remote-machine 'cd /path/to/deploy && ./your_binary'"
+
+[[bin]]
+name = "splitflow"
+path = "src/main.rs"

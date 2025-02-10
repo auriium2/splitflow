@@ -147,8 +147,8 @@ impl CoreDB {
 pub async fn load_mongo_db(cfg: &SplitflowConfig) -> Result<CoreDB> {
     let client = timeout(Duration::from_secs(5),mongodb::Client::with_uri_str(&cfg.mongo_url))
         .await
-        .expect("Connection timed out")
-        .expect("Could not connect");
+        .map_err(|_| anyhow::anyhow!("Connection timed out connecting to mongodb with url {}", &cfg.mongo_url))?
+        .map_err(|_| anyhow::anyhow!("Could not connect"))?;
     
     let signpost_db = client
         .database("splitflow")
@@ -168,8 +168,8 @@ pub async fn load_redis_conn(cfg: &SplitflowConfig) -> Result<ConnectionManager>
     let redis_url = cfg.redis_url.clone();
     let conn = timeout(Duration::from_secs(5), apalis_redis::connect(redis_url))
         .await
-        .expect("Connection timed out")
-        .expect("Could not connect");
+        .map_err(|_| anyhow::anyhow!("Connection timed out while connecting to redis {}", &cfg.redis_url))?
+        .map_err(|_| anyhow::anyhow!("Could not connect"))?;
     
     info!("connected to redis");
     Ok(conn)

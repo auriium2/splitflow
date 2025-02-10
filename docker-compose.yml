@@ -1,4 +1,12 @@
 services:
+  splitflow:
+    container_name: splitflow
+    build: .
+    env_file:
+      - .env
+    tty: true
+    networks:
+      - app-network
   redis:
     image: "redis:latest"
     networks:
@@ -6,6 +14,8 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+    volumes:
+      - redis-data:/data
   mongodb:
     image: "mongo:latest"
     networks:
@@ -16,6 +26,8 @@ services:
     environment: #todo: .env
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: DHOeETe48VOOg4WN
+    volumes:
+      - mongo-data:/data/db
   auto-rsa:
     container_name: auto-rsa
     build: ./splitflow-buy
@@ -29,4 +41,8 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  redis-data:
+  mongo-data:
 

@@ -44,7 +44,7 @@ pub async fn buy(ctx: DiscordContext<'_>, ticker: String) -> Result<()> {
 }
 #[poise::command(prefix_command, slash_command)]
 pub async fn sell(ctx: DiscordContext<'_>, ticker: String) -> Result<()> {
-    buytask(ctx, &ticker, Action::Buy).await
+    buytask(ctx, &ticker, Action::Sell).await
 }
 
 async fn buytask(ctx: DiscordContext<'_>, ticker: &String, action: Action) -> Result<()> {

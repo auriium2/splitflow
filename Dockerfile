@@ -16,19 +16,15 @@ COPY src/ src/
 RUN rm -f ./target/release/splitflow
 RUN cargo build --release
 
-# Third stage: Minimal runtime with Debian slim
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
-# Install required runtime dependencies (if needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the compiled binary from the build stage
 COPY --from=builder /app/target/release/splitflow /usr/src/splitflow
 
-# Ensure the binary is executable
 RUN chmod +x /usr/src/splitflow
 
-# Set the default command to run the binary
 CMD ["/usr/src/splitflow"]

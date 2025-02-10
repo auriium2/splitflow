@@ -7,8 +7,12 @@ use crate::core::SplitflowConfig;
 
 #[instrument]
 pub async fn load_cfg() -> anyhow::Result<SplitflowConfig> {
-    let path: &Path = &dotenv::dotenv()?;
-    info!("The configuration file path is: {:#?}", fs::canonicalize(path).await?);
+    let path = dotenv::dotenv().ok();
+    if let Some(path) = path {
+        info!("The configuration file path is: {:#?}", fs::canonicalize(path).await?);
+    } else {
+        info!("No .env file found, loading from environment variables");
+    }
 
     let cfg = Config::builder()
         .add_source(config::Environment::default())
