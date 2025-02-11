@@ -48,8 +48,8 @@ impl BuyTask {
 
 #[derive(Error, Debug)]
 pub enum BuyError {
-    #[error("oops!")]
-    DataError(),
+    #[error(transparent)]
+    DataError(#[from] anyhow::Error),
 }
 
 
@@ -57,8 +57,8 @@ pub enum BuyError {
 pub async fn buy_task(task: BuyTask, svc: Data<PythonAllService>) -> Result<(), BuyError> {
     info!("executing {:#?}", task);
     
-    svc.process(&task).await.expect("oops!");
-    task.unreliable_done().await.expect("oops!");
+    //svc.process(&task).await?;
+    task.unreliable_done().await?;
 
     Ok(())
 }

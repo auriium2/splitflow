@@ -25,10 +25,12 @@ use poise::serenity_prelude as serenity;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use sentry::ClientInitGuard;
 use tokio::try_join;
 use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
 use tracing::{info, trace, warn};
+use tracing_error::ErrorLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::{prelude::*, registry::Registry};
@@ -42,7 +44,7 @@ mod util;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    load_logging()?;
+    let _guard = load_logging()?;
 
     //CORE STUFF
     let cfg: SplitflowConfig = load_cfg().await?;
@@ -119,11 +121,13 @@ async fn main() -> anyhow::Result<()> {
         .register(rss_worker)
         .register(perfmon_worker)
         .register(announcement_worker)
+        .on_event(|e| tracing::info!("listener: {e:?}"))
         .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
 
     info!("system OK");
 
+    
     let jz = tokio::select! {
         _ = discord_future => {
             info!("Application tasks completed.");
@@ -139,8 +143,8 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_logging() -> anyhow::Result<()> {
-    let _guard = sentry::init(("https://fcd01658de95c45347b2f688b0be014f@o4508741150113792.ingest.us.sentry.io/4508741156077568", sentry::ClientOptions {
+fn load_logging() -> anyhow::Result<ClientInitGuard> {
+    let guard = sentry::init(("https://fcd01658de95c45347b2f688b0be014f@o4508741150113792.ingest.us.sentry.io/4508741156077568", sentry::ClientOptions {
         release: sentry::release_name!(),
         traces_sample_rate: 1.0, //TODO lower this in prod
         ..sentry::ClientOptions::default()
@@ -155,11 +159,12 @@ fn load_logging() -> anyhow::Result<()> {
         .add_directive("serenity=warn".parse()?);
 
     let subscriber = Registry::default()
+        .with(ErrorLayer::default())
         .with(sentry_tracing::layer())
         .with(filter)
         .with(tracing_subscriber::fmt::Layer::default().compact());
 
     tracing::subscriber::set_global_default(subscriber).expect("setting global default failed");
     trace!("loaded logging");
-    Ok(())
+    Ok(guard)
 }

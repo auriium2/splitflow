@@ -10,15 +10,15 @@ use tokio::time::sleep;
 use tracing::{info, instrument, warn};
 
 static PROMPT: &str = r#"
-Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, AlreadyHappened, Other. If it seems like the company has already split and is just notifying shareholders, use AlreadyHappened. 
+Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, AlreadyHappened, OTC, Other. If it seems like the company has already split and is just notifying shareholders, use AlreadyHappened. If the stock is not traded on the NYSE or NASDAQ, use OTC. 
 
 Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information. Cite your sources in the document in your reasoning.
 
 Ensure your response is a JSON object in the following format (without comments):
 {
   "reasoning": "something",
-  "ticker": "something", // the company's corresponding NYSE or NASDAQ stock ticker, all caps
-  "classification": "RoundUp",  // only allows (case-sensitive) one of (RoundUp, RoundDown, Cash, NotSplit, Other)
+  "ticker": "something", // the company's corresponding NYSE or NASDAQ stock ticker, all caps (4 characters max)
+  "classification": "RoundUp",  // only allows (case-sensitive) one of (RoundUp, RoundDown, Cash, NotSplit, OTC, Other)
   "ex_date": "something",  //  ISO 8601 datetime for the ex-date with UTC timezone, or null if not found
 }
 
@@ -33,6 +33,7 @@ pub enum Classification {
     Cash,
     NotSplit,
     AlreadyHappened,
+    OTC,
     Other
 }
 
