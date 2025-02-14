@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio::{join, sync};
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, span, trace, warn};
 use tracing::instrument;
 use tokio::sync::oneshot;
 
@@ -36,7 +36,7 @@ use serenity::all::Colour;
 use thiserror::Error;
 use crate::buysell::{Action, BuyTask};
 use crate::core::queue::QueueManager;
-use crate::discord2::announce::{DiscordTask, Source, Where};
+use crate::discord2::announce::{AnnounceTask, Source, Where};
 
 
 const SEC_6K_LINK: &str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=6-K&company=&dateb=&owner=include&start=0&count=100&output=atom";
@@ -78,6 +78,7 @@ pub async fn rss_task(task: RSSTask, core: Data<RSSService>) -> std::result::Res
 
 #[derive(Clone)]
 pub struct RSSService {
+
     proxied_client: Client,
     cfg: SplitflowConfig,
     db: Arc<CoreDB>,
@@ -318,7 +319,7 @@ impl RSSService {
             return Ok(())
         }
         
-        self.queues.push_discord(DiscordTask::new(
+        self.queues.push_manager(AnnounceTask::new(
             Source::Scanner,
             Where::Announcements,
             format!("Splitflow has detected {} potential stock splits", key_documents.len()),
@@ -340,6 +341,8 @@ impl RSSService {
             self.process_inferred_document(&document).await?;
             self.db.update_filing_document(document).await?;
         }
+
+        info!("scan complete!");
         
         Ok(())
     }
@@ -356,7 +359,7 @@ impl RSSService {
         if inference.classification == Classification::RoundUp && inference.ex_date.is_some() {
             info!("stock {} has ROUND_UP on date {:#?}!", inference.ticker, inference.ex_date);
 
-            self.queues.push_discord(DiscordTask::new(
+            self.queues.push_manager(AnnounceTask::new(
                 Source::Scanner,
                 Where::Announcements,
                 format!("Splitflow has detected a stock split for stock {}. It is estimated to occur at the date {:?}. Queueing the stock for purchasing!", inference.ticker, inference.ex_date),
@@ -365,13 +368,13 @@ impl RSSService {
 
             self.queues.push_buy(BuyTask::new(Action::Buy, inference.ticker.clone())).await?;
         } else {
-            self.queues.push_discord(DiscordTask::new(
+            /*self.queues.push_manager(AnnounceTask::new(
                 Source::Scanner,
                 Where::Announcements,
                 format!("Splitflow believes stock {} is type {:?}, or lacks an ex-date, and does not signify a true split.", inference.ticker, inference.classification),
                 Colour::DARK_ORANGE
             )).await.map_err(|_| anyhow::anyhow!("failed to announce discord message"))?;
-
+*/
             info!("stock {} has {:#?}!", inference.ticker, inference.classification);
         }
         Ok(())
@@ -580,19 +583,23 @@ mod tests {
     use std::io::Read;
     use std::sync::atomic::AtomicI32;
     use std::sync::Arc;
+    use apalis::prelude::MemoryStorage;
+    use apalis_redis::RedisStorage;
+    use crate::core::database::load_mongo_db;
+    use crate::core::load::load_cfg;
 
-    /*#[tokio::test]
+
+    #[tokio::test]
     async fn test_visit_intermediaries() {
-        let redis_url = std::env::var("REDIS_URL").expect("Missing env variable REDIS_URL");
-        let conn = apalis_redis::connect(redis_url)
+        let cfg = load_cfg().await.expect("uh oh");
+        let db = load_mongo_db(&cfg).await.expect("aah");
+
+        let conn = apalis_redis::connect(cfg.redis_url.clone())
             .await
             .expect("Could not connect");
-        let storage = RedisStorage::new(conn);
-        //TODO: can we mock this instead? this code is so... not mockable
 
-
-        
-        let context = RSSService::new(core, storage, Default::default());
+        let v = QueueManager::new(RedisStorage::new(conn.clone()), MemoryStorage::new(), MemoryStorage::new());
+        let context = RSSService::new(Client::new(), cfg, Arc::new(db), Arc::new(v));
         
 
         let headers = generate_headers();
@@ -603,19 +610,13 @@ mod tests {
         let counter = Arc::new(AtomicI32::new(0));
 
         let result = context.visit_intermediaries(&headers, unseen_ids, counter.clone()).await.expect("oops");
-        let result = extract_8k_links(result).await.expect("oops");
 
-        let veco = result
-            .iter()
-            .map(|v| UUIDAndLink{uuid: v.0.clone(), link: v.1.clone()})
-            .collect::<Vec<UUIDAndLink>>();
+        result.iter().for_each(|f| {
+            println!("{}", f.1)
+        });
 
-        let visited = context.visit_intermediaries(&headers, veco, counter.clone()).await.expect("TODO: panic message");
 
-        for v in visited {
-            println!("{}", v.1)
-        }
-    }*/
+    }
 
     #[test]
     fn test_extract_all_text() {

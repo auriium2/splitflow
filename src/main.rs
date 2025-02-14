@@ -19,17 +19,19 @@ use apalis_cron::{CronStream, Schedule};
 use apalis_redis::RedisStorage;
 use chrono::Utc;
 use discord2::announce;
-use discord2::announce::{DiscordService, DiscordTask};
+use discord2::announce::{DiscordService, AnnounceTask};
 use discord2::perfmon::perfmon_task;
 use poise::serenity_prelude as serenity;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use apalis::layers::tracing::TraceLayer;
 use sentry::ClientInitGuard;
 use tokio::try_join;
 use tower::limit::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
-use tracing::{info, trace, warn};
+use tower::retry::RetryLayer;
+use tracing::{event, info, trace, warn};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
@@ -59,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     //QUEUE STUFF
     let rss_queue: MemoryStorage<RSSTask> = MemoryStorage::new();
     let buy_queue: RedisStorage<BuyTask> = RedisStorage::new(conn);
-    let discord_queue: MemoryStorage<DiscordTask> = MemoryStorage::new();
+    let discord_queue: MemoryStorage<AnnounceTask> = MemoryStorage::new();
     let qm = Arc::new(QueueManager::new(
         buy_queue.clone(),
         discord_queue.clone(),
@@ -121,7 +123,9 @@ async fn main() -> anyhow::Result<()> {
         .register(rss_worker)
         .register(perfmon_worker)
         .register(announcement_worker)
-        .on_event(|e| tracing::info!("listener: {e:?}"))
+        /*.on_event(|e| {
+            tracing::info!("listener: {e:?}")
+        })*/ //TODO pipe this to the Status Monitor Perfmonbot 2
         .shutdown_timeout(Duration::from_secs(10))
         .run_with_signal(tokio::signal::ctrl_c());
 

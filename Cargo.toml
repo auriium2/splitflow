@@ -39,6 +39,8 @@ sentry = "0.36.0"
 scraper = "0.22.0"
 mockall = "0.13.1"
 tracing-error = "0.2.1"
+enum_delegate = "0.2.0"
+log = "0.4.25"
 
 [build]
 rustflags = ["--cfg", "tokio_unstable"]

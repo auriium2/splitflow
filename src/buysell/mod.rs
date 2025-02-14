@@ -53,11 +53,11 @@ pub enum BuyError {
 }
 
 
-#[instrument(skip_all)]
+#[instrument(skip(svc))]
 pub async fn buy_task(task: BuyTask, svc: Data<PythonAllService>) -> Result<(), BuyError> {
     info!("executing {:#?}", task);
     
-    //svc.process(&task).await?;
+    svc.process(&task).await?;
     task.unreliable_done().await?;
 
     Ok(())

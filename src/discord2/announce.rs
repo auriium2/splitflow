@@ -27,13 +27,13 @@ impl Display for Source {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct DiscordTask {
+pub struct AnnounceTask {
     source: Source,
     location: Where,
     string: String,
     color: Colour
 }
-impl DiscordTask {
+impl AnnounceTask {
     pub fn new(source: Source, location: Where, string: String, color: Colour) -> Self {
         Self { source, location, string, color }
     }
@@ -51,7 +51,7 @@ impl DiscordService {
     }
     
     #[tracing::instrument(skip_all)]
-    pub async fn process(&self, task: DiscordTask) -> anyhow::Result<()> {
+    pub async fn process(&self, task: AnnounceTask) -> anyhow::Result<()> {
         
         if task.location == Where::Announcements {
             let task_source = task.source.to_string().to_uppercase();
@@ -78,7 +78,7 @@ pub enum TransparentError {
     GenericError(#[from] anyhow::Error)
 }
 
-pub async fn process_task(task: DiscordTask, svc: Data<DiscordService>) -> Result<(),TransparentError> {
+pub async fn process_task(task: AnnounceTask, svc: Data<DiscordService>) -> Result<(),TransparentError> {
     svc.process(task).await?;
     
     Ok(())

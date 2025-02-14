@@ -47,7 +47,6 @@ pub enum PerfmonError {
 pub async fn perfmon_task(_task: PerfmonTask, svc: Data<PerfmonService>, worker: Worker<Context>) -> Result<(), PerfmonError> {
     //info!("is_shutting_down: {}", worker.is_shutting_down());
     
-    trace!("running perfmon task");
     let opt = svc.db.get_signpost(PERFMON_BB.to_string()).await?;
     
     if let Some(contents) = opt {

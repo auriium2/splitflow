@@ -1,6 +1,5 @@
 use crate::buysell::{Action, BuyTask};
 use crate::core::database::{CoreDB, SignpostDocument};
-use crate::core::queue::QueueManager;
 use crate::core::{SplitflowConfig, Ticker, APP_NAME};
 use crate::discord2::util::{command_bad, command_good, command_mid, command_neutral};
 use crate::scrape::RSSTask;
@@ -19,10 +18,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{instrument, warn};
 use tracing::info;
+use crate::core::queue::QueueManager;
 
 pub mod announce;
 pub(crate) mod perfmon;
 mod util;
+mod trade_announce;
 
 //i hate poise with a passion
 struct DiscordCore {

@@ -1,20 +1,29 @@
 //TODO re-add local llm or use bert
 
 use std::time::Duration;
+use anyhow::Error;
 use chrono::{DateTime, Utc};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 use tokio::time::sleep;
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
+use crate::scrape::rss_inference::InferenceError::EmptyOutputError;
 
 static PROMPT: &str = r#"
-Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, AlreadyHappened, OTC, Other. If it seems like the company has already split and is just notifying shareholders, use AlreadyHappened. If the stock is not traded on the NYSE or NASDAQ, use OTC. 
+Please read the following document and analyze whether the company plans to execute a reverse stock split. Then, if the company plans to execute a reverse stock split, classify whether the company plans to round up fractional shares in a reverse stock split using one of the following categories: RoundUp, RoundDown, Cash, NotSplit, AlreadyHappened, OTC, Other. 
+- If fractional shares will be rounded up, use RoundUp.
+- If fractional shares will be rounded down, use RoundDown.
+- If the company will issue cash and not round, use Cash.
+- If the document does not describe a split, use NotSplit.
+- If the company has already split and is notifying shareholders, use AlreadyHappened. 
+- If the stock is not traded on the NYSE or NASDAQ, use OTC.
+- If none of the other categories are matched, use Other.
 
-Additionally, extract the ex-date (the date the split takes effect) and predict when the stock will reappear on exchanges based on the document's information. Cite your sources in the document in your reasoning.
+Additionally, extract the ex-date (the date the split takes effect) based on the document's information. Cite your sources in your reasoning.
 
-Ensure your response is a JSON object in the following format (without comments):
+Please output only a JSON object in the following format, without any markdown formatting or extra text. Do not include any code fences.
 {
   "reasoning": "something",
   "ticker": "something", // the company's corresponding NYSE or NASDAQ stock ticker, all caps (4 characters max)
@@ -68,52 +77,15 @@ enum InferenceError {
 
     #[error(transparent)]
     JsonError(#[from] serde_json::Error),
+
+    #[error("empty output")]
+    EmptyOutputError(),
     
     #[error("rate limited")]
     RateLimitedError(StatusCode)
 }
 
 impl Inference for LLMInference<'_> {
-    
-   /* #[instrument(skip_all)]
-    async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput> {
-        info!("Inferencing with LLM model");
-        
-        let request_body = json!({
-        "model": "gpt-4o-mini",
-        "messages": [
-            { "role": "system", "content": "You are an expert financial analyst." },
-            { "role": "user", "content": PROMPT.replace("{}", &document_text.join("\n")) }
-        ]
-        });
-        let response = self.client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&request_body)
-            .send()
-            .await?;
-        
-        if response.status() != StatusCode::OK {
-            return Err(InferenceError::RateLimitedError(response.status()).into());
-        }
-        
-        let response_json: serde_json::Value = response.json().await?;
-        let chatgpt_response = response_json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string()
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .to_string();
-
-        info!("done with inference");
-        
-        let chatgpt_response = serde_json::from_str::<InferenceOutput>(&chatgpt_response)?;
-
-        Ok(chatgpt_response)
-    }*/
     
     #[instrument(skip_all)]
     async fn infer(&self, document_text: &Vec<String>) -> anyhow::Result<InferenceOutput> {
@@ -159,6 +131,11 @@ impl Inference for LLMInference<'_> {
                 .trim_start_matches("")
                 .trim_end_matches("`")
                 .to_string();
+            
+            if chatgpt_response.is_empty() {
+                error!("empty response!");
+                return Err(Error::from(EmptyOutputError()))
+            }
 
             info!("done with inference");
 
