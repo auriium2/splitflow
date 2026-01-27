@@ -21,6 +21,7 @@ TODO: dockerize so i don't need to pay mongodb
 - automated!
 - ai accelerated™
 - **please delete the commit history and the api keys before you publish this**
+  - i dont care aymore
 
 ## technical description
 - Scans in parallel!
