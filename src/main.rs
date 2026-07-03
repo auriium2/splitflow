@@ -148,7 +148,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn load_logging() -> anyhow::Result<ClientInitGuard> {
-    let guard = sentry::init(("https://fcd01658de95c45347b2f688b0be014f@o4508741150113792.ingest.us.sentry.io/4508741156077568", sentry::ClientOptions {
+    let sentry_dsn = std::env::var("SENTRY_DSN").ok();
+    let guard = sentry::init((sentry_dsn, sentry::ClientOptions {
         release: sentry::release_name!(),
         traces_sample_rate: 1.0, //TODO lower this in prod
         ..sentry::ClientOptions::default()

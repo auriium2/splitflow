@@ -51,7 +51,8 @@ mod tests {
     use crate::core::*;
     #[tokio::test]
     async fn test_live_load_data() -> Result<()> {
-        let proxy_url = "http://whokwhmg-rotate:jmditeewz262@p.webshare.io:80/";
+        dotenv::dotenv().ok();
+        let proxy_url = std::env::var("PROXY_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
         let client = reqwest::Client::builder()
             .proxy(Proxy::all(proxy_url)?)
