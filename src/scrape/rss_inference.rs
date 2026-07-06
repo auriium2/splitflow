@@ -115,7 +115,7 @@ impl Inference for LLMInference<'_> {
             
             if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 attempt += 1;
-                warn!("Rate limited. Retrying in {:?}...", delay);
+                warn!("Rate limited. retrying in {:?}...", delay);
                 sleep(delay).await;
                 delay *= 2;  // Exponential backoff
                 continue;
